@@ -114,6 +114,8 @@ public class MainActivity extends Activity {
     }
 
     private static final String PAGE = "file:///android_asset/app/index.html";
+    /* An NVIDIA SHIELD TV (2015 foster, 2017 darcy, 2019 Pro mdarcy, 2019 tube sif) */
+    static boolean isShield() { return "NVIDIA".equalsIgnoreCase(android.os.Build.MANUFACTURER) && android.os.Build.MODEL != null && android.os.Build.MODEL.toUpperCase(java.util.Locale.US).contains("SHIELD"); }
     private FrameLayout stage;
     /* The page: the WebView and its settings (made again when Android stopped the old one, pageGone) */
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -129,7 +131,10 @@ public class MainActivity extends Activity {
             @Override public boolean onCheckIsTextEditor() { return editing && super.onCheckIsTextEditor(); }
         };
         web.setBackgroundColor(Color.TRANSPARENT);
-        web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        /* NVIDIA SHIELD: no hardware layer. It made the page draw into a full-screen offscreen copy every frame, then that
+           copy over the video (Android advises a hardware layer only for the length of an animation); the page is
+           drawn by the GPU without it. Other devices keep it until it is checked on them. */
+        if (!isShield()) web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         web.setFocusable(true);
         web.setFocusableInTouchMode(true);
         web.setVerticalScrollBarEnabled(false);

@@ -127,7 +127,10 @@ final class Player {
         android.app.ActivityManager am = (android.app.ActivityManager) act.getSystemService(android.content.Context.ACTIVITY_SERVICE);
         long heapMb = am != null ? am.getLargeMemoryClass() : 256;
         int bufferBytes = (int) Math.max(16L << 20, Math.min(Crash.small(act) ? 32L << 20 : 128L << 20, (heapMb << 20) / 4));   // little memory: 32 MB (about 50 s of a 1080p channel)
-        DefaultLoadControl load = new DefaultLoadControl.Builder().setBufferDurationsMs(15000, 50000, 2500, 5000).setTargetBufferBytes(bufferBytes).build();
+        /* Playing once 1 s is in (2.5 s before), 2.5 s after the stream paused (5 s): a channel or a movie starts sooner,
+           most of all from a server that sends at the stream's own pace (a provider without a burst, a home server
+           reached over a VPN such as Tailscale). Media3's own defaults since 1.6 are 1 s and 2 s. */
+        DefaultLoadControl load = new DefaultLoadControl.Builder().setBufferDurationsMs(15000, 50000, 1000, 2500).setTargetBufferBytes(bufferBytes).build();
         meter = new DefaultBandwidthMeter.Builder(act).build();
         exo = new ExoPlayer.Builder(act, new SyncedRenderers(act).setEnableDecoderFallback(true))
             .setTrackSelector(selector)
