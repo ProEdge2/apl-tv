@@ -12,8 +12,8 @@ A test build to try changes on your own TV (a SHIELD…) without touching the in
     APL_TMDB_KEY, APL_SIMKL_CLIENT_ID (environment, optional): a TMDB key and a Simkl Client ID built into the package
     .github/workflows/shield-test.yml builds it on GitHub and publishes it.
 
-Needs a JDK 17+, the Android SDK (platforms/android-35, build-tools/35.0.0) and Gradle 8.10:
-    ANDROID_HOME (default E:/Android/Sdk), GRADLE (default E:/Android/gradle-8.10.2/bin/gradle.bat),
+Needs a JDK 17+, the Android SDK (platforms/android-36, build-tools/35.0.0) and Gradle 8.13:
+    ANDROID_HOME (default E:/Android/Sdk), GRADLE (default E:/Android/gradle-8.13/bin/gradle.bat),
     JAVA_HOME (default: the Temurin JDK 21 of this PC), GRADLE_USER_HOME (default E:/Android/gradle-home).
 
 The app is the same code as on Samsung and LG (app/), copied into the Android app's assets: it finds
@@ -179,7 +179,7 @@ banner.save(os.path.join(MAIN, "res", "drawable-xhdpi", "banner.png"))
 # ---- the tools (on this PC: E:, where there is room; on GitHub: what the runner provides)
 win = os.name == "nt"
 sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or ("E:/Android/Sdk" if win else "")
-gradle = os.environ.get("GRADLE") or ("E:/Android/gradle-8.10.2/bin/gradle.bat" if win else "gradle")
+gradle = os.environ.get("GRADLE") or ("E:/Android/gradle-8.13/bin/gradle.bat" if win else "gradle")
 java = os.environ.get("JAVA_HOME") or ("C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot" if win else "")
 if not sdk:
     sys.exit("ANDROID_HOME is not set")

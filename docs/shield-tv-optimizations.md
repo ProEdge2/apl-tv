@@ -2,6 +2,14 @@
 
 *Researched 27 November 2026, against APL TV 1.4.17 (branch `claude/festive-thompson-6adam0`, PR #1).*
 
+### Available in APL TV 1.4.18
+
+- **Settings › Playback › Match Frame Rate** defaults to **All Sources** on SHIELD. It covers full-screen live and on-demand video, including MPEG-TS when a stable cadence can be measured. The app keeps the current output resolution and releases its refresh-rate request when playback closes, enters preview or goes into the background.
+- **Adaptive Stream Quality** defaults to **Automatic** for HLS and DASH. **Best Quality** keeps the highest supported bitrate. **Prefer Full HD for Live TV** chooses the FHD stream when it is grouped with a 4K version. The in-player Quality menu still allows manual selection.
+- Live channel switches keep the video surface attached. The next stream waits for the previous stream's HTTP loads to close. Stream Info shows first-frame startup time, rebuffer count and duration, and the current display refresh rate.
+- **Settings › Display › Android TV Home Shortcuts › Show on Home** adds Last Channel and Continue Watching on launchers that support Android TV's Home channels. Confirm the Android TV launcher prompt.
+- Media3 1.11.1 needs the new APK and raises the minimum Android version to 6.0 (API 23). The measurements below still need a physical SHIELD, especially for HDMI mode switching and receiver passthrough.
+
 The goal is to make watching on a SHIELD as smooth and as quick as possible: channels and movies that start fast,
 judder-free motion, and a UI that stays fluid over the video. This document collects what the code does today,
 what current documentation and other players say, and what to change, ranked by impact.

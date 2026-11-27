@@ -14,12 +14,12 @@ def appLabel = project.findProperty("aplLabel") ?: "APL TV"
 
 android {
     namespace "com.knikt.apltv"
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId appId
         manifestPlaceholders = [aplLabel: appLabel, shelfAuthority: appId + ".shelf"]
-        minSdk 21
+        minSdk 23
         targetSdk 35
         versionCode parts[0] * 10000 + parts[1] * 100 + parts[2]
         versionName aplVersion
@@ -64,7 +64,7 @@ android {
 }
 
 dependencies {
-    def media3 = "1.5.1"
+    def media3 = "1.11.1"
     implementation "androidx.media3:media3-exoplayer:$media3"
     implementation "androidx.media3:media3-exoplayer-hls:$media3"
     implementation "androidx.media3:media3-exoplayer-dash:$media3"

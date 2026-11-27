@@ -6,6 +6,22 @@
    so counts are written as "Label: {n}" rather than "{n} things".
    ============================================================ */
 window.TV_LANG_PL = {
+    "Last Channel": "Ostatni kanał",
+    "Best Quality": "Najlepsza jakość",
+    "Rebuffering": "Przerwy na buforowanie",
+    "Display Refresh Rate": "Częstotliwość odświeżania ekranu",
+    "Adaptive Stream Quality": "Adaptacyjna jakość strumienia",
+    "Automatic adjusts HLS and DASH quality as your connection changes. Best Quality always uses the highest supported bitrate.": "Tryb automatyczny dopasowuje jakość HLS i DASH do połączenia. Tryb Najlepsza jakość zawsze używa najwyższej obsługiwanej przepływności.",
+    "Prefer Full HD for Live TV": "Preferuj Full HD w telewizji na żywo",
+    "When Full HD and 4K versions are grouped on one channel card, start in Full HD. You can still select 4K from Quality.": "Jeśli wersje Full HD i 4K są zgrupowane na jednej karcie kanału, odtwarzanie zacznie się w Full HD. Nadal możesz wybrać 4K w menu Jakość.",
+    "Movies and Series": "Filmy i seriale",
+    "All Sources": "Wszystkie źródła",
+    "Match Frame Rate": "Dopasuj częstotliwość odświeżania",
+    "Match the TV refresh rate to full-screen video, including live TV with All Sources. HDMI switching can briefly blank the screen.": "Dopasowuje odświeżanie telewizora do filmu na pełnym ekranie, w tym do kanałów na żywo po wybraniu opcji Wszystkie źródła. Zmiana trybu HDMI może na chwilę wygasić ekran.",
+    "Android TV Home Shortcuts": "Skróty na ekranie głównym Android TV",
+    "Show Last Channel and Continue Watching in an APL TV row on Android TV Home.": "Pokazuje Ostatni kanał i Kontynuuj oglądanie w wierszu APL TV na ekranie głównym Android TV.",
+    "Show on Home": "Pokaż na ekranie głównym",
+    "Remove from Home": "Usuń z ekranu głównego",
     "Press OK for the sound": "Naciśnij OK, aby włączyć dźwięk",
     "Paused · OK to play": "Wstrzymano · OK, aby odtworzyć",
     "OK pause · ◀ ▶ 10 s · Back to the match": "OK pauza · ◀ ▶ 10 s · Wstecz do meczu",

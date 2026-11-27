@@ -5,6 +5,22 @@
    Spanish from Spain, informal "tú", sentence case for labels.
    ============================================================ */
 window.TV_LANG_ES = {
+    "Last Channel": "Último canal",
+    "Best Quality": "Mejor calidad",
+    "Rebuffering": "Pausas de carga",
+    "Display Refresh Rate": "Frecuencia de actualización de la pantalla",
+    "Adaptive Stream Quality": "Calidad de vídeo adaptativa",
+    "Automatic adjusts HLS and DASH quality as your connection changes. Best Quality always uses the highest supported bitrate.": "El modo automático ajusta la calidad de HLS y DASH según tu conexión. Mejor calidad usa siempre la tasa de bits más alta compatible.",
+    "Prefer Full HD for Live TV": "Preferir Full HD en TV en directo",
+    "When Full HD and 4K versions are grouped on one channel card, start in Full HD. You can still select 4K from Quality.": "Si las versiones Full HD y 4K aparecen agrupadas en un canal, empieza en Full HD. Puedes seguir eligiendo 4K en Calidad.",
+    "Movies and Series": "Películas y series",
+    "All Sources": "Todas las fuentes",
+    "Match Frame Rate": "Ajustar la frecuencia de imagen",
+    "Match the TV refresh rate to full-screen video, including live TV with All Sources. HDMI switching can briefly blank the screen.": "Ajusta la frecuencia del televisor al vídeo en pantalla completa, incluido el directo con Todas las fuentes. El cambio de modo HDMI puede dejar la pantalla en negro brevemente.",
+    "Android TV Home Shortcuts": "Accesos directos de inicio de Android TV",
+    "Show Last Channel and Continue Watching in an APL TV row on Android TV Home.": "Muestra Último canal y Seguir viendo en una fila de APL TV en el inicio de Android TV.",
+    "Show on Home": "Mostrar en inicio",
+    "Remove from Home": "Quitar del inicio",
     /* 1.0.11: Stream Info, Quality, Audio */
     "Press OK for the sound": "Pulsa OK para activar el sonido",
     "Paused · OK to play": "En pausa · OK para reproducir",

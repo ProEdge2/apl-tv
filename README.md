@@ -174,6 +174,8 @@ LG's Developer Mode lasts a set number of hours: press **Extend Session Time** i
 
 ### Android TV, Google TV and Fire TV
 
+Android 6.0 (API 23) or newer is required.
+
 **No root.** Install the `.apk` like any app from outside the store:
 
 - **On the TV, with the Downloader app:** type the code **9141513**. It always gives the latest version (`https://github.com/Knikt/APL-TV/releases/latest/download/apl-tv-android.apk`). Android asks once to allow apps from Downloader.
@@ -188,7 +190,7 @@ Copy `app/js/keys.example.js` to `app/js/keys.local.js` and put your TMDB key in
 ```powershell
 .\tools\build.ps1 -TizenCli <path to tizen.bat> -Profile <your signing profile> -Install -Ip 192.168.1.50 -Launch   # Samsung
 python tools/make-webos.py      # LG: dist/com.knikt.apltv_X.Y.Z_all.ipk (LG's webOS CLI)
-python tools/make-android.py    # Android: dist/apl-tv-vX.Y.Z-personal.apk (JDK 17+, Android SDK 35, Gradle 8.10)
+python tools/make-android.py    # Android: dist/apl-tv-vX.Y.Z-personal.apk (JDK 17+, Android SDK 36, Gradle 8.13)
 ```
 
 `tools/check.py` runs the same checks as GitHub Actions. `--dev` (and `-Dev` for Samsung) adds a development log served by the helper on port 8765, never for daily use.

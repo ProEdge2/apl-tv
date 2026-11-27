@@ -650,11 +650,13 @@
                 out.push(e);
             });
             // 4K first only where it plays (TV.canUhd: a Fire TV Stick froze the picture of TF1 4K); else after HD
-            var uhd = !TV.canUhd || TV.canUhd(), rank = function (q) { var n = S.qualityRank(q); return n === 4 && !uhd ? 1.5 : n; };
+            var uhd = !TV.canUhd || TV.canUhd(), preferFhd = TV.ANDROID && TV.pref("livePreferFhd");
+            var rank = function (q) { var n = S.qualityRank(q); return n === 4 && !uhd ? 1.5 : n; };
             out = out.map(function (e) {
                 if (!e.variants) return e.self;
                 var v = e.variants.slice().sort(function (a, b) { return rank(b.q) - rank(a.q); });
-                var best = v[0], copy = {};
+                var fhd = preferFhd && v.some(function (x) { return x.q === "4K"; }) && v.filter(function (x) { return x.q === "FHD"; })[0];
+                var best = fhd || v[0], copy = {};
                 Object.keys(best).forEach(function (k) { copy[k] = best[k]; });
                 copy.variants = v; copy.num = Math.min.apply(null, v.map(function (x) { return x.num; }));
                 if (!copy.logo) for (var i = 0; i < v.length; i++) if (v[i].logo) { copy.logo = v[i].logo; break; }

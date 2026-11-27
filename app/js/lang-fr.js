@@ -4,6 +4,22 @@
    {name} placeholders stay as they are.
    ============================================================ */
 window.TV_LANG_FR = {
+    "Last Channel": "Dernière chaîne",
+    "Best Quality": "Meilleure qualité",
+    "Rebuffering": "Remises en mémoire tampon",
+    "Display Refresh Rate": "Taux de rafraîchissement du téléviseur",
+    "Adaptive Stream Quality": "Qualité du flux adaptatif",
+    "Automatic adjusts HLS and DASH quality as your connection changes. Best Quality always uses the highest supported bitrate.": "Le mode automatique ajuste la qualité HLS et DASH selon ta connexion. La meilleure qualité utilise toujours le débit maximal pris en charge.",
+    "Prefer Full HD for Live TV": "Préférer le Full HD pour le direct",
+    "When Full HD and 4K versions are grouped on one channel card, start in Full HD. You can still select 4K from Quality.": "Si une chaîne regroupe des versions Full HD et 4K, elle démarre en Full HD. Tu peux toujours choisir la 4K dans Qualité.",
+    "Movies and Series": "Films et séries",
+    "All Sources": "Toutes les sources",
+    "Match Frame Rate": "Adapter la fréquence d’image",
+    "Match the TV refresh rate to full-screen video, including live TV with All Sources. HDMI switching can briefly blank the screen.": "Adapte le taux de rafraîchissement du téléviseur à la vidéo en plein écran, y compris au direct avec Toutes les sources. Le changement de mode HDMI peut brièvement rendre l’écran noir.",
+    "Android TV Home Shortcuts": "Raccourcis de l’accueil Android TV",
+    "Show Last Channel and Continue Watching in an APL TV row on Android TV Home.": "Affiche Dernière chaîne et Reprendre la lecture dans une rangée APL TV de l’accueil Android TV.",
+    "Show on Home": "Afficher sur l’accueil",
+    "Remove from Home": "Retirer de l’accueil",
     /* 1.0.11: Stream Info, Quality, Audio */
     "Press OK for the sound": "Appuie sur OK pour le son",
     "Paused · OK to play": "En pause · OK pour reprendre",

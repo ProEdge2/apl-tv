@@ -11,7 +11,7 @@
     "use strict";
 
     var TV = global.TV, el = TV.el, esc = TV.esc, T = TV.t, D = TV.data;
-    TV.VERSION = "1.4.17";
+    TV.VERSION = "1.4.18";
     TV.DONATE = "https://ko-fi.com/knikt";     // the Ko-fi page for donations (Settings > About, README, .github/FUNDING.yml)
     var BASE = [
         { id: "home", label: T("Home") },
@@ -153,7 +153,9 @@
         webosSeen = txt;
         try { return typeof p === "object" && p ? p : (JSON.parse(txt) || {}); } catch (e) { return {}; }
     }
+    var requestsReady = false;
     function readRequest(params) {
+        if (TV.ANDROID && !requestsReady) return false;
         try {
             var m = {};
             if (TV.WEBOS) m = webosParams(params);
@@ -179,6 +181,13 @@
             // A search asked from outside (voice, APL Launcher): search=<words>
             if (m.search && TV.voice) { TV.voice.search(String(m.search).slice(0, 80)); return true; }
             if (m.play === "last") { var last = D.channel(TV.pref("lastChannel")); if (last) { TV.live.play(last); return true; } }
+            if (m.play === "continue") {
+                var next = D.continueWatching()[0];
+                if (!next) { go("home", true); return true; }
+                if (next.item.kind === "movie") TV.detail.play(next.item, next.resume.pos || 0);
+                else TV.detail.open(next.item, { resume: true });
+                return true;
+            }
         } catch (e) {}
         return false;
     }
@@ -198,7 +207,7 @@
     /* ---------- APL Launcher's Top Shelf ----------
        What you were watching and your channels, with the data to open each one here (app control
        "resume", "title", "channel"). Sent when you leave APL TV and every few minutes. */
-    function pushShelf() {
+    function pushShelf(askHome) {
         // APL Launcher: Samsung and LG screens through the helper service (/tmp/apltv-shelf.json), Android through
         // the app itself (ShelfProvider.java, a new .apk: an older one has no Bridge.shelf and gets nothing)
         var A = global.APLAndroid;
@@ -221,6 +230,10 @@
             var last = lc ? { name: lc.name, num: lc.num, logo: lc.logo || "", now: lcur ? lcur[2] : "", progress: lcur ? Math.round(TV.epg.progress(lcur) * 100) / 100 : 0, data: { channel: lc.id } } : null;
             send({ v: 1, app: "APLTVMedia.TV", at: Date.now(), lang: TV.lang, continueWatching: cont, lastChannel: last, channels: chans, recentlyWatched: watched,
                    favorites: !!D.favChannels().length });
+            if (TV.ANDROID && A.homeChannel && TV.pref("androidHomeChannel")) {
+                A.homeChannel(JSON.stringify({ lastLabel: T("Last Channel"), lastName: last ? last.name : "",
+                    continueLabel: T("Continue Watching"), continueName: cont.length ? cont[0].title : "" }), askHome === true);
+            }
         } catch (e) { TV.log("shelf: " + e.message); }
     }
     setInterval(function () { if (!document.hidden) pushShelf(); }, 5 * 60 * 1000);
@@ -286,6 +299,7 @@
             // a stop without warning last time (js/crash.js): its box comes first
             if (TV.crash) TV.crash.check(offers); else offers();
             setTimeout(function () { TV.$("boot").classList.add("is-hidden"); document.body.classList.remove("is-booting"); global.TV_BOOT_OK = true; }, 150);
+            requestsReady = true;
             readRequest();
             if (TV.voice) TV.voice.start();
             TV.heap("catalog loaded");

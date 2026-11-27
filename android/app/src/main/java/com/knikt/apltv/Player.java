@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.View;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
@@ -14,6 +15,7 @@ import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Timeline;
 import androidx.media3.common.Tracks;
 import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.text.Cue;
@@ -24,6 +26,7 @@ import androidx.media3.exoplayer.DecoderCounters;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
@@ -46,12 +49,19 @@ final class Player {
     private final Activity act;
     private final FrameLayout root;
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private final DisplayRate displayRate;
+    private final StreamConnections connections = new StreamConnections();
     private PlayerView view;
     private ExoPlayer exo;
     private DefaultTrackSelector selector;
     private WebView web;
     private String url = null;
-    private boolean prepared = false, wantPlay = false, suspended = false, wasPlaying = false;
+    private boolean prepared, wantPlay, suspended, live, preview, bestQuality, seeking;
+    private boolean firstFrameReported, modeChangedBeforeFirstFrame;
+    private long sourceSerial, firstFrameAt, rebufferSince, rebufferMs;
+    private int session, rebuffers;
+    private float contentRate;
+    private String matchMode = "off";
     private volatile double durationMs = 0, positionMs = 0;
     private volatile String tracksJson = "[]", currentJson = "[]", statsJson = "{}", videoJson = "{}";
     private volatile long statsWanted = 0;
@@ -77,7 +87,11 @@ final class Player {
         }
     }
 
-    Player(Activity act, FrameLayout root) { this.act = act; this.root = root; }
+    Player(Activity act, FrameLayout root) {
+        this.act = act;
+        this.root = root;
+        displayRate = new DisplayRate(act, ui, this::updatePlayback);
+    }
 
     /* 4K first only where it can be shown and decoded: a 4K mode on the screen and a decoder for HEVC 2160p at 50
        frames a second (a Fire TV Stick on an HD TV, or an older box, gets the FHD version of a channel first) */
@@ -116,11 +130,7 @@ final class Player {
     private void ensure() {
         if (exo != null) return;
         selector = new DefaultTrackSelector(act);
-        // IPTV MPEG-TS streams: keyframes not always marked, access units to be found
-        DefaultExtractorsFactory ex = new DefaultExtractorsFactory()
-            .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES | DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS);
-        http = new DefaultHttpDataSource.Factory()
-            .setUserAgent(UA).setAllowCrossProtocolRedirects(true).setConnectTimeoutMs(15000).setReadTimeoutMs(20000);
+        selector.setParameters(selector.buildUponParameters().setAllowInvalidateSelectionsOnRendererCapabilitiesChange(true));
         /* The video kept ahead: ExoPlayer's own limit is about 140 MB, taken from what the app may use. On a device with
            little memory (a Fire TV Stick lets an app use 256 MB or less) that alone, with a guide or a playlist, was
            enough to close the app: a quarter of what the app may use instead, 16 to 128 MB (about 20 s of 4K at 256 MB). */
@@ -135,21 +145,58 @@ final class Player {
         exo = new ExoPlayer.Builder(act, new SyncedRenderers(act).setEnableDecoderFallback(true))
             .setTrackSelector(selector)
             .setBandwidthMeter(meter)
-            .setMediaSourceFactory(new DefaultMediaSourceFactory(http, ex))
             .setLoadControl(load)
+            .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
             .build();
         view.setPlayer(exo);
+        exo.addAnalyticsListener(new AnalyticsListener() {
+            @Override public void onRenderedFirstFrame(EventTime t, Object output, long renderedAt) {
+                if (url == null || firstFrameAt != 0 || t.windowIndex < 0 || t.windowIndex >= t.timeline.getWindowCount()) return;
+                if (!Long.toString(sourceSerial).equals(t.timeline.getWindow(t.windowIndex, new Timeline.Window()).mediaItem.mediaId)) return;
+                firstFrameAt = System.currentTimeMillis() - Math.max(0, SystemClock.elapsedRealtime() - renderedAt);
+                reportFirstFrame();
+            }
+        });
         exo.addListener(new androidx.media3.common.Player.Listener() {
             @Override public void onPlaybackStateChanged(int s) {
-                if (s == androidx.media3.common.Player.STATE_BUFFERING) event("buffering", "true");
+                if (url == null) return;
+                if (s == androidx.media3.common.Player.STATE_BUFFERING) {
+                    if (firstFrameReported && wantPlay && !suspended && !displayRate.isChanging() && !seeking && rebufferSince == 0) {
+                        rebufferSince = SystemClock.elapsedRealtime();
+                        rebuffers++;
+                    }
+                    event("buffering", "true");
+                }
                 else if (s == androidx.media3.common.Player.STATE_READY) {
+                    seeking = false;
+                    endRebuffer();
                     durationMs = exo.isCurrentMediaItemLive() || exo.getDuration() == C.TIME_UNSET ? 0 : exo.getDuration();
                     readTracks();
-                    if (!prepared) { prepared = true; exo.setPlayWhenReady(wantPlay); event("prepared", null); }
+                    if (!prepared) {
+                        prepared = true;
+                        for (Tracks.Group group : exo.getCurrentTracks().getGroups()) {
+                            if (group.getType() != C.TRACK_TYPE_VIDEO) continue;
+                            for (int i = 0; i < group.length; i++) {
+                                if (group.isTrackSelected(i) && group.getTrackFormat(i).frameRate > 0) {
+                                    contentRate = group.getTrackFormat(i).frameRate;
+                                    break;
+                                }
+                            }
+                            if (contentRate > 0) break;
+                        }
+                        matchDisplay();
+                        event("prepared", null);
+                    }
                     event("buffering", "false");
-                } else if (s == androidx.media3.common.Player.STATE_ENDED) event("ended", null);
+                } else if (s == androidx.media3.common.Player.STATE_ENDED) {
+                    endRebuffer();
+                    displayRate.reset();
+                    event("ended", null);
+                }
             }
             @Override public void onPlayerError(PlaybackException e) {
+                endRebuffer();
+                displayRate.reset();
                 event("error", JSONObject.quote(e.getErrorCodeName() + (e.getCause() != null ? " " + e.getCause().getClass().getSimpleName() : "")));
             }
             @Override public void onTracksChanged(Tracks t) { readTracks(); }
@@ -159,11 +206,44 @@ final class Player {
                 event("subtitle", JSONObject.quote(b.toString()));
             }
             @Override public void onPositionDiscontinuity(androidx.media3.common.Player.PositionInfo a, androidx.media3.common.Player.PositionInfo b, int reason) {
-                if (reason == androidx.media3.common.Player.DISCONTINUITY_REASON_SEEK && pendingSeek != 0) { event("seeked", String.valueOf(pendingSeek)); pendingSeek = 0; }
+                if (reason == androidx.media3.common.Player.DISCONTINUITY_REASON_SEEK && pendingSeek != 0) {
+                    if (exo.getPlaybackState() != androidx.media3.common.Player.STATE_BUFFERING) seeking = false;
+                    event("seeked", String.valueOf(pendingSeek)); pendingSeek = 0;
+                }
             }
         });
         ui.post(ticker);
     }
+
+    private void endRebuffer() {
+        if (rebufferSince == 0) return;
+        rebufferMs += SystemClock.elapsedRealtime() - rebufferSince;
+        rebufferSince = 0;
+    }
+
+    private void updatePlayback() {
+        if (exo == null) return;
+        exo.setPlayWhenReady(wantPlay && !suspended && !displayRate.isChanging());
+        reportFirstFrame();
+    }
+
+    private void reportFirstFrame() {
+        if (!prepared || !wantPlay || suspended || displayRate.isChanging() || firstFrameAt == 0 || firstFrameReported) return;
+        firstFrameReported = true;
+        event("firstframe", Long.toString(modeChangedBeforeFirstFrame ? System.currentTimeMillis() : firstFrameAt));
+    }
+
+    private void matchDisplay() {
+        if (url != null && !suspended && !preview && lastRect[0] == 0 && lastRect[1] == 0 && lastRect[2] == 1920 && lastRect[3] == 1080
+                && ("always".equals(matchMode) || (!live && "movies".equals(matchMode)))) {
+            displayRate.match(contentRate);
+            if (displayRate.isChanging() && !firstFrameReported) modeChangedBeforeFirstFrame = true;
+        } else displayRate.reset();
+        updatePlayback();
+    }
+
+    void matchFrameRate(String mode) { ui.post(() -> { matchMode = mode; matchDisplay(); }); }
+    void preview(boolean on) { ui.post(() -> { preview = on; matchDisplay(); }); }
 
     /* The page hears the time twice a second while it plays.
        A picture that stays still while the sound goes on (a 4K stream a Fire TV Stick cannot keep up with: every
@@ -194,23 +274,42 @@ final class Player {
 
     private void event(String name, String arg) {
         if (web == null) return;
-        final String js = "window.__aplEvent&&__aplEvent('" + name + "'" + (arg != null ? "," + arg : "") + ")";
-        // the page of that moment: it may have been replaced in between (MainActivity.pageGone)
-        ui.post(() -> { WebView w = web; if (w != null) w.evaluateJavascript(js, null); });
+        final WebView page = web;
+        final long source = sourceSerial;
+        final String js = "window.__aplEvent&&__aplEvent('" + name + "'," + (arg != null ? arg : "null") + "," + session + ")";
+        ui.post(() -> { if (web == page && source == sourceSerial) page.evaluateJavascript(js, null); });
     }
     /* A new page after Android stopped the old one (MainActivity.pageGone); null while there is none */
     void page(WebView w) { web = w; }
 
     /* ---------- AVPlay's calls ---------- */
-    void open(String u) {
+    void open(String u) { openSource(u, false, false, false, "off", false, 0); }
+    void openSource(String u, boolean live, boolean preview, boolean replace, String mode, boolean best, int session) {
         ui.post(() -> {
             ensure();
+            boolean keepSurface = replace && this.live && url != null && view.getVisibility() == View.VISIBLE;
+            sourceSerial++;
+            this.session = session;
+            this.live = live;
+            this.preview = preview;
+            matchMode = mode;
+            bestQuality = best;
             url = u; prepared = false; wantPlay = false; durationMs = 0; positionMs = 0; lastSummary = "";
+            firstFrameAt = rebufferMs = rebufferSince = 0; rebuffers = 0; pendingSeek = 0;
+            seeking = false;
+            firstFrameReported = modeChangedBeforeFirstFrame = false; contentRate = 0;
             lastRendered = -1; lastFrameAt = 0; stallSaid = false;
-            videoOverride = -1; video.clear(); videoJson = "{}"; statsJson = "{}";
-            selector.setParameters(selector.buildUponParameters().setForceHighestSupportedBitrate(false).clearOverrides().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false));
-            exo.stop();
-            exo.clearMediaItems();
+            videoOverride = -1; resetTracks();
+            http = new DefaultHttpDataSource.Factory()
+                .setUserAgent(UA).setAllowCrossProtocolRedirects(true).setConnectTimeoutMs(15000).setReadTimeoutMs(20000);
+            selector.setParameters(selector.buildUponParameters().setForceHighestSupportedBitrate(bestQuality).clearOverrides().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false));
+            exo.setPlayWhenReady(false);
+            view.setKeepContentOnPlayerReset(keepSurface);
+            if (!keepSurface) {
+                exo.stop();
+                exo.clearMediaItems();
+                displayRate.reset();
+            }
             view.setVisibility(View.VISIBLE);
         });
     }
@@ -221,36 +320,63 @@ final class Player {
     private void prepare(long startMs) {
         ui.post(() -> {
             if (exo == null || url == null) return;
-            MediaItem.Builder b = new MediaItem.Builder().setUri(Uri.parse(url));
+            long source = sourceSerial;
+            MediaItem.Builder b = new MediaItem.Builder().setUri(Uri.parse(url)).setMediaId(Long.toString(source));
             String l = url.toLowerCase();
             if (l.contains(".m3u8") || l.contains("/hls/") || l.contains("format=m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8);
             else if (l.contains(".mpd")) b.setMimeType(MimeTypes.APPLICATION_MPD);
-            if (startMs > 0) { exo.setMediaItem(b.build(), startMs); positionMs = startMs; }
-            else exo.setMediaItem(b.build());
+            DefaultExtractorsFactory extractors = new DefaultExtractorsFactory()
+                .setTsExtractorFlags(DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES | DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS);
+            connections.activate(source);
+            exo.setMediaSource(new DefaultMediaSourceFactory(connections.forSource(http, source), extractors)
+                .createMediaSource(b.build()), startMs > 0 ? startMs : C.TIME_UNSET);
+            if (startMs > 0) positionMs = startMs;
+            VideoCadence cadence = new VideoCadence();
+            exo.setVideoFrameMetadataListener((pts, release, format, mediaFormat) -> {
+                float fps = cadence.sample(pts, format);
+                if (fps > 0) ui.post(() -> {
+                    if (source != sourceSerial || url == null) return;
+                    contentRate = fps;
+                    matchDisplay();
+                });
+            });
             if (startMs >= 0) wantPlay = true;           // prepareAt: plays once ready (onPlaybackStateChanged, READY)
             exo.setPlayWhenReady(false);
             exo.prepare();
         });
     }
-    void play() { ui.post(() -> { wantPlay = true; if (exo != null) exo.setPlayWhenReady(true); }); }
-    void pause() { ui.post(() -> { wantPlay = false; if (exo != null) exo.setPlayWhenReady(false); }); }
-    void stop() { ui.post(() -> { wantPlay = false; if (exo != null) exo.stop(); }); }
+    void play() { ui.post(() -> { wantPlay = true; updatePlayback(); }); }
+    void pause() { ui.post(() -> { wantPlay = false; endRebuffer(); updatePlayback(); }); }
+    void stop() { ui.post(() -> { wantPlay = false; endRebuffer(); displayRate.reset(); if (exo != null) exo.stop(); }); }
     void close() {
         ui.post(() -> {
             wantPlay = false; url = null; prepared = false;
+            connections.activate(++sourceSerial);
+            displayRate.reset();
             if (exo != null) { exo.stop(); exo.clearMediaItems(); }
+            view.setKeepContentOnPlayerReset(false);
             view.setVisibility(View.GONE);
-            tracksJson = "[]"; currentJson = "[]"; audio.clear(); text.clear(); video.clear(); videoJson = "{}"; statsJson = "{}";
+            resetTracks();
         });
     }
-    void seek(long ms, int id) { ui.post(() -> { if (exo == null) return; pendingSeek = id; exo.seekTo(Math.max(0, ms)); positionMs = ms; }); }
+    private void resetTracks() {
+        tracksJson = "[]"; currentJson = "[]"; audio.clear(); text.clear(); video.clear(); videoJson = "{}"; statsJson = "{}";
+    }
+    void seek(long ms, int id) {
+        ui.post(() -> {
+            if (exo == null) return;
+            endRebuffer();
+            seeking = true; pendingSeek = id;
+            exo.seekTo(Math.max(0, ms)); positionMs = ms;
+        });
+    }
     double duration() { return durationMs; }
     double position() { return positionMs; }
 
     /* Where the picture goes, in the page's 1920 x 1080 coordinates */
     void rect(double x, double y, double w, double h) {
         lastRect = new double[]{x, y, w, h};
-        ui.post(this::placeView);
+        ui.post(() -> { placeView(); matchDisplay(); });
     }
     private void placeView() {
         if (view == null || web == null) return;
@@ -269,7 +395,7 @@ final class Player {
         if ("USER_AGENT".equals(key)) { String ua = value == null || value.isEmpty() ? UA : value; ui.post(() -> { if (http != null) http.setUserAgent(ua); }); return; }
         // "the best quality from the start" (Samsung's ADAPTIVE_INFO STARTBITRATE=HIGHEST)
         if ("ADAPTIVE_INFO".equals(key) && value != null && value.contains("HIGHEST"))
-            ui.post(() -> { if (selector != null) selector.setParameters(selector.buildUponParameters().setForceHighestSupportedBitrate(true)); });
+            ui.post(() -> { if (selector != null) { bestQuality = true; selector.setParameters(selector.buildUponParameters().setForceHighestSupportedBitrate(true)); } });
     }
 
     /* ---------- tracks, in AVPlay's shape ---------- */
@@ -332,7 +458,13 @@ final class Player {
         } catch (Exception ignored) {}
         tracksJson = all.toString();
         currentJson = cur.toString();
-        try { JSONObject v = new JSONObject(); v.put("override", videoOverride); v.put("list", vids); videoJson = v.toString(); } catch (Exception ignored) {}
+        try {
+            JSONObject v = new JSONObject();
+            v.put("override", videoOverride);
+            if (videoOverride < 0) v.put("mode", bestQuality ? "best" : "auto");
+            v.put("list", vids);
+            videoJson = v.toString();
+        } catch (Exception ignored) {}
         String s = sum.toString();
         if (s.length() > 0 && !s.equals(lastSummary)) {
             lastSummary = s;
@@ -385,7 +517,7 @@ final class Player {
             Format v = exo.getVideoFormat(), a = exo.getAudioFormat();
             if (v != null) {
                 o.put("w", v.width); o.put("h", v.height);
-                if (v.frameRate > 0) o.put("fps", v.frameRate);
+                if (contentRate > 0 || v.frameRate > 0) o.put("fps", contentRate > 0 ? contentRate : v.frameRate);
                 o.put("vcodec", v.codecs != null ? v.codecs : (v.sampleMimeType != null ? v.sampleMimeType : ""));
                 if (v.bitrate > 0) o.put("vbitrate", v.bitrate);
                 if (v.colorInfo != null) {
@@ -401,6 +533,9 @@ final class Player {
             }
             if (meter != null) o.put("bandwidth", meter.getBitrateEstimate());
             o.put("buffered", exo.getTotalBufferedDuration() / 1000.0);
+            o.put("refreshRate", displayRate.refreshRate());
+            o.put("rebuffers", rebuffers);
+            o.put("rebufferMs", rebufferMs + (rebufferSince == 0 ? 0 : SystemClock.elapsedRealtime() - rebufferSince));
             DecoderCounters dc = exo.getVideoDecoderCounters();
             if (dc != null) { dc.ensureUpdated(); o.put("dropped", dc.droppedBufferCount); o.put("frames", dc.renderedOutputBufferCount); }
             statsJson = o.toString();
@@ -418,7 +553,9 @@ final class Player {
             if (exo == null) return;
             if (index < 0 || index >= video.size()) {
                 videoOverride = -1;
-                exo.setTrackSelectionParameters(exo.getTrackSelectionParameters().buildUpon().clearOverridesOfType(C.TRACK_TYPE_VIDEO).build());
+                bestQuality = index == -2;
+                selector.setParameters(selector.buildUponParameters().setForceHighestSupportedBitrate(bestQuality)
+                    .clearOverridesOfType(C.TRACK_TYPE_VIDEO));
             } else {
                 int[] gi = video.get(index);
                 Tracks.Group grp = exo.getCurrentTracks().getGroups().get(gi[0]);
@@ -426,6 +563,7 @@ final class Player {
                 exo.setTrackSelectionParameters(exo.getTrackSelectionParameters().buildUpon()
                     .setOverrideForType(new TrackSelectionOverride(grp.getMediaTrackGroup(), gi[1])).build());
             }
+            readTracks();
         });
     }
     String tracksJson() { return tracksJson; }
@@ -447,7 +585,12 @@ final class Player {
     }
 
     /* The app in the background: the picture waits (a channel starts again live when it comes back) */
-    void suspend() { ui.post(() -> { if (exo == null || suspended) return; suspended = true; wasPlaying = exo.getPlayWhenReady(); exo.setPlayWhenReady(false); }); }
-    void restore() { ui.post(() -> { if (exo == null || !suspended) return; suspended = false; if (wasPlaying) exo.setPlayWhenReady(true); }); }
-    void release() { ui.removeCallbacks(ticker); if (exo != null) { exo.release(); exo = null; } }
+    void suspend() { ui.post(() -> { if (suspended) return; suspended = true; endRebuffer(); displayRate.reset(); updatePlayback(); }); }
+    void restore() { ui.post(() -> { if (!suspended) return; suspended = false; matchDisplay(); }); }
+    void release() {
+        ui.removeCallbacksAndMessages(null);
+        displayRate.release();
+        connections.activate(++sourceSerial);
+        if (exo != null) { exo.release(); exo = null; }
+    }
 }

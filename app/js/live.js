@@ -195,7 +195,7 @@
     function schedulePreview(ch) {
         clearTimeout(previewTimer);
         if (!ch || !visible || !TV.pref("autoPreview") || (playing && playing.id === ch.id)) return;
-        previewTimer = setTimeout(function () { if (visible) playChannel(ch, FULL); }, 800);
+        previewTimer = setTimeout(function () { if (visible) playChannel(ch, FULL, null, { preview: true }); }, 800);
     }
     function markPlaying() {
         if (!cards) return;
@@ -209,6 +209,7 @@
         wait.classList.remove("is-hidden");
         D.pushRecent(ch.id);
         TV.setPref("lastChannel", ch.id);
+        if (TV.ANDROID && TV.pref("androidHomeChannel") && TV.pushShelf) TV.pushShelf();
         more = more || {};
         var addr = String(url || D.streamUrl(ch)), seen = false;
         /* An Xtream channel in HLS that never started (a provider without HLS): the same channel in MPEG-TS after two
@@ -221,7 +222,7 @@
                 if (playing !== ch || seen) return;
                 TV.log("channel " + ch.name + ": HLS failed, MPEG-TS tried");
                 var back = false;
-                playChannel(ch, rect, addr.replace(/\.m3u8(\?|$)/i, ".ts$1"), { onError: more.onError, onTime: function (ms) {
+                playChannel(ch, rect, addr.replace(/\.m3u8(\?|$)/i, ".ts$1"), { preview: more.preview, onError: more.onError, onTime: function (ms) {
                     if (!back && TV.pref("liveFormat") === "m3u8") { TV.setPref("liveFormat", "ts"); TV.setPref("noAutoHls", 1); TV.toast(T("HLS does not play with this provider: back to MPEG-TS"), true); }
                     back = true;
                     if (more.onTime) more.onTime(ms);
@@ -232,7 +233,7 @@
             return true;
         }
         TV.player.play(addr, {
-            live: true, rect: rect || FULL, uhd: ch.q === "4K",
+            live: true, preview: !!more.preview, rect: rect || FULL, uhd: ch.q === "4K",
             onBuffering: function (b) { if (TV.osd.isOpen()) TV.osd.buffering(b); else wait.classList.toggle("is-hidden", !b); },
             onPlaying: function () { wait.classList.add("is-hidden"); if (TV.osd.isOpen()) TV.osd.buffering(false); },
             // the picture moves: no spinner left, in Live TV or full screen
@@ -258,12 +259,13 @@
         if (!built) build();
         // the same channel opened again after it was stopped (from Home, the Guide…): it starts again
         if (!playing || playing.id !== ch.id || TV.player.state() === "NONE") playChannel(ch, FULL);
-        else TV.player.setRect(FULL);
+        else { TV.player.setRect(FULL); TV.player.setPreview(false); }
         if (!ctx) ctx = visible && cards.items.length ? cards.items : (D.isFav(ch.id) ? D.favChannels() : D.channelsIn(ch.cat));
         TV.osd.live(ch, ctx, function onClose(last) {
             // Back from full screen: the interface comes back over the same picture
             if (last) { playing = last; select(last.id); markPlaying(); }
             if (!visible) { TV.player.stop(); playing = null; }
+            else TV.player.setPreview(true);
         }, function onZap(c) { playing = c; });
     }
     function select(id) {
@@ -589,15 +591,16 @@
         TV.log("picture frozen" + (ch ? " on " + ch.name + " " + (ch.q || "") : "") + " (" + dropped + " frames dropped)");
         if (!ch) return;
         var cur = TV.player.current(), rect = (cur && cur.opts && cur.opts.rect) || FULL, now = Date.now();
+        var more = { preview: !!(cur && cur.opts.preview) };
         var again = frozeAt[ch.id] && now - frozeAt[ch.id] < 120000;
         frozeAt[ch.id] = now;
-        if (!again || now - TV.player.backAt() < 60000) { TV.log("picture frozen: " + ch.name + " starts again"); playChannel(ch, rect); return; }
+        if (!again || now - TV.player.backAt() < 60000) { TV.log("picture frozen: " + ch.name + " starts again"); playChannel(ch, rect, null, more); return; }
         var src = D.sources().filter(function (s) { return s.id === ch.src; })[0];
         var formats = (src && src.account && src.account.formats) || [];
         if (src && src.type === "xtream" && TV.pref("liveFormat") !== "m3u8" && !TV.pref("liveFormatMine") && !TV.pref("noAutoHls") && (!formats.length || formats.indexOf("m3u8") >= 0)) {
             TV.setPref("liveFormat", "m3u8");
             TV.toast(T("Picture frozen: switching to {quality}", { quality: "HLS" }));
-            playChannel(ch, rect);
+            playChannel(ch, rect, null, more);
             return;
         }
         var group = null;
@@ -607,7 +610,7 @@
         if (ch.q === "4K" && TV.noUhd) { TV.noUhd(); D.regroup(); }
         if (!next) return;
         TV.toast(T("Picture frozen: switching to {quality}", { quality: next.q || T("Standard") }));
-        playChannel(next, rect);
+        playChannel(next, rect, null, more);
     };
     TV.live = { play: function (ch, ctx) { fullScreen(ch, ctx); }, findNumber: findNumber, playChannel: function (ch, rect, url, more) { playChannel(ch, rect, url, more); }, pickCategory: pickCategory, guideMenu: guideMenu };
 })(window);

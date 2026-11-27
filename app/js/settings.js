@@ -86,6 +86,20 @@
         rows.push({ label: T("Live Stream Format"), value: TV.pref("liveFormat") === "m3u8" ? "HLS (m3u8)" : "MPEG-TS", desc: T("For Xtream accounts. Try HLS if channels stutter or do not start."),
             // your choice: APL TV no longer changes it by itself (a frozen picture, HLS refused; js/live.js)
             run: function () { TV.setPref("liveFormat", TV.pref("liveFormat") === "m3u8" ? "ts" : "m3u8"); TV.setPref("liveFormatMine", 1); redraw(); } });
+        var android = global.APLAndroid;
+        if (TV.ANDROID && android && android.openSource) {
+            rows.push({ label: T("Adaptive Stream Quality"), value: TV.pref("adaptiveQuality") === "best" ? T("Best Quality") : T("Automatic"), acc: "chevron",
+                desc: T("Automatic adjusts HLS and DASH quality as your connection changes. Best Quality always uses the highest supported bitrate."),
+                run: function () { choose(T("Adaptive Stream Quality"), "adaptiveQuality", [["auto", T("Automatic")], ["best", T("Best Quality")]]); } });
+            rows.push(toggleRow(T("Prefer Full HD for Live TV"), "livePreferFhd",
+                T("When Full HD and 4K versions are grouped on one channel card, start in Full HD. You can still select 4K from Quality."),
+                D.regroup));
+            var rates = [["off", T("Off")], ["movies", T("Movies and Series")], ["always", T("All Sources")]];
+            var rate = rates.filter(function (r) { return r[0] === TV.pref("matchFrameRate"); })[0] || rates[0];
+            rows.push({ label: T("Match Frame Rate"), value: rate[1], acc: "chevron",
+                desc: T("Match the TV refresh rate to full-screen video, including live TV with All Sources. HDMI switching can briefly blank the screen."),
+                run: function () { choose(T("Match Frame Rate"), "matchFrameRate", rates, function () { android.matchFrameRate(TV.pref("matchFrameRate")); }); } });
+        }
         rows.push({ label: T("Picture Size"), value: { fit: T("Fit to Screen"), fill: T("Fill the Screen"), auto: T("Original Shape") }[TV.pref("pictureMode")] || T("Fit to Screen"), acc: "chevron", icon: "aspect",
             desc: T("How movies, series and channels fill the screen. Also in the player, third button at the top right."),
             run: function () { choose(T("Picture Size"), "pictureMode", [["fit", T("Fit to Screen")], ["fill", T("Fill the Screen")], ["auto", T("Original Shape")]]); } });
@@ -94,6 +108,14 @@
             desc: T("When the sound and the picture don't match: later if you hear the words before the lips move, earlier if after. Applies at once, even while watching."),
             run: function () { choose(T("Sound Delay (AV Sync)"), "audioDelay", delaySteps().map(function (n) { return [n, delayLabel(n)]; })); } });
         rows.push({ section: T("Display") });
+        if (TV.ANDROID && android && android.homeChannelSupported && android.homeChannelSupported()) {
+            rows.push({ label: T("Android TV Home Shortcuts"), value: TV.pref("androidHomeChannel") ? T("On") : T("Off"), acc: "chevron",
+                desc: T("Show Last Channel and Continue Watching in an APL TV row on Android TV Home."),
+                run: function () { TV.menu(T("Android TV Home Shortcuts"), [
+                    { label: T("Show on Home"), run: function () { TV.setPref("androidHomeChannel", true); TV.shelfNow(true); redraw(); } },
+                    { label: T("Remove from Home"), run: function () { TV.setPref("androidHomeChannel", false); android.homeChannel("", false); redraw(); } }
+                ]); } });
+        }
         // js/core.js TV.SMALL: Automatic follows the memory of the device; a change restarts APL TV
         var LIGHT = [["auto", T("Automatic")], ["on", T("On")], ["off", T("Off")]], ram = TV.RAM_MB ? (TV.RAM_MB / 1024).toFixed(1).replace(".", TV.lang === "en" ? "." : ",") + " " + T("GB") : "";
         if (TV.ANDROID) rows.push({ label: T("Light Mode"), acc: "chevron",

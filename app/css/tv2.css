@@ -129,7 +129,6 @@
 .is-pressed { transform: scale(0.94) !important; transition: transform 90ms ease-out !important; }
 
 /* Layers prepared in advance: the cards near the focus (TV.lift), and the small items that are few */
-.is-lift, .btn, .tab { will-change: transform; }
 
 /* Pictures: the decoded picture itself is put in the card */
 .card__img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: block; }

@@ -27,10 +27,12 @@
     };
 
     /* ---------- the player, as AVPlay ---------- */
-    var listener = {}, state = "NONE", onPrepared = null, onPrepareFail = null, seekCbs = {}, seekId = 0;
+    var listener = {}, state = "NONE", onPrepared = null, onPrepareFail = null, seekCbs = {}, seekId = 0, session = 0;
     function call(name, a, b) { var f = listener && listener[name]; if (f) { try { f(a, b); } catch (e) { if (global.TV && TV.log) TV.log("player event " + name + ": " + e.message); } } }
+    function clearSeeks() { Object.keys(seekCbs).forEach(function (id) { clearTimeout(seekCbs[id].t); }); seekCbs = {}; }
 
-    global.__aplEvent = function (name, a) {
+    global.__aplEvent = function (name, a, id) {
+        if (id && id !== session) return;
         switch (name) {
             case "prepared":
                 state = state === "PLAYING" ? "PLAYING" : "READY";
@@ -38,6 +40,7 @@
                 break;
             case "buffering": call(a ? "onbufferingstart" : "onbufferingcomplete"); break;
             case "time": call("oncurrentplaytime", a); break;
+            case "firstframe": call("onfirstframe", a); break;
             case "ended": call("onstreamcompleted"); break;
             case "error":
                 if (onPrepared) { var ko = onPrepareFail; onPrepared = onPrepareFail = null; if (ko) ko({ name: a }); }
@@ -57,7 +60,13 @@
     };
 
     var avplay = {
-        open: function (url) { state = "IDLE"; onPrepared = onPrepareFail = null; B.open(String(url)); },
+        open: function (url, opts, replace) {
+            state = "IDLE"; onPrepared = onPrepareFail = null; clearSeeks();
+            if (B.openSource) B.openSource(String(url), !!opts.live, !!opts.preview, !!replace, TV.pref("matchFrameRate"), TV.pref("adaptiveQuality") === "best", ++session);
+            else B.open(String(url));
+        },
+        replaceLive: !!B.openSource,
+        reportsFirstFrame: !!B.openSource,
         setListener: function (l) { listener = l || {}; },
         prepareAsync: function (ok, fail, startMs) {
             onPrepared = ok || function () {}; onPrepareFail = fail || null;
@@ -70,7 +79,7 @@
         play: function () { state = "PLAYING"; B.play(); },
         pause: function () { state = "PAUSED"; B.pause(); },
         stop: function () { state = "IDLE"; B.stop(); },
-        close: function () { state = "NONE"; listener = {}; onPrepared = onPrepareFail = null; B.close(); },
+        close: function () { state = "NONE"; listener = {}; onPrepared = onPrepareFail = null; clearSeeks(); session++; B.close(); },
         getState: function () { return state; },
         getDuration: function () { return B.duration(); },
         seekTo: function (ms, ok, fail) {

@@ -31,6 +31,7 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private WebView web;
     private Player player;
+    private HomeChannel homeChannel;
     private Helper helper;
     private volatile boolean editing = false;
     // What APL TV was opened for (APL Launcher's Top Shelf: resume=<title>, channel=<channel>…), read once by the page
@@ -99,6 +100,7 @@ public class MainActivity extends Activity {
 
         this.stage = stage;
         player = new Player(this, stage);
+        homeChannel = new HomeChannel(this);
         web = makePage();
         stage.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
@@ -378,6 +380,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String request() { String r = request; request = ""; return r; }
         // APL Launcher's Top Shelf (ShelfProvider.java)
         @JavascriptInterface public void shelf(String json) { ShelfProvider.write(MainActivity.this, json); }
+        @JavascriptInterface public boolean homeChannelSupported() { return homeChannel.supported(); }
+        @JavascriptInterface public void homeChannel(String cards, boolean request) { homeChannel.sync(cards, request); }
         @JavascriptInterface public void editing(boolean on) {
             editing = on;
             runOnUiThread(() -> {
@@ -394,6 +398,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void typeEnd() { runOnUiThread(() -> endTyping(false, false)); }
         // The player (Player.java): the same calls as Samsung's AVPlay, through js/android.js
         @JavascriptInterface public void open(String url) { player.open(url); }
+        @JavascriptInterface public void openSource(String url, boolean live, boolean preview, boolean replace, String match, boolean best, int session) {
+            player.openSource(url, live, preview, replace, match, best, session);
+        }
+        @JavascriptInterface public void preview(boolean on) { player.preview(on); }
+        @JavascriptInterface public boolean isShield() { return MainActivity.isShield(); }
+        @JavascriptInterface public void matchFrameRate(String mode) { player.matchFrameRate(mode); }
         @JavascriptInterface public void prepare() { player.prepare(); }
         /* 1.4.17: opened at the place to start from (ms), playing as soon as it is ready (js/android.js startsAt) */
         @JavascriptInterface public void prepareAt(long ms) { player.prepareAt(ms); }
@@ -453,6 +463,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (helper != null) helper.stop();
+        if (homeChannel != null) homeChannel.release();
         if (player != null) player.release();
         if (web != null) { web.removeJavascriptInterface("APLAndroid"); web.destroy(); }
         super.onDestroy();

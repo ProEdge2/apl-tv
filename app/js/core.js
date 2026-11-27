@@ -124,7 +124,8 @@
 
     var DEFAULTS = { guideKeep: false, tvGuide: true, sportsTab: true, audioDelay: 0, pictureMode: "fit", language: "auto", sounds: true, showAdult: false, mergeQuality: true, chanOrder: "list", autoPreview: false, motion: true, startTab: "home", lastChannel: null, timeFormat: "24",
                      audioLang: "auto", audioLang2: "orig", subLang: "auto", subLang2: "off", subSize: "m", subColor: "white", subBg: "outline", subPos: "low", autoNext: false, resumePrompt: true, autoUpdate: true, screenSaver: "auto", tidyCats: true, tidyNames: true, kbLayout: "auto", timeshift: true, crashReports: "ask", lightMode: "auto",
-                     simklWatched: true, simklList: true, simklResume: true };
+                     simklWatched: true, simklList: true, simklResume: true, adaptiveQuality: "auto", livePreferFhd: false,
+                     matchFrameRate: TV.ANDROID && global.APLAndroid.isShield && global.APLAndroid.isShield() ? "always" : "off", androidHomeChannel: false };
     var prefs = TV.load("prefs", {}) || {};
     var prefListeners = [];
     TV.pref = function (k) { return Object.prototype.hasOwnProperty.call(prefs, k) ? prefs[k] : DEFAULTS[k]; };

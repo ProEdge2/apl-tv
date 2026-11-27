@@ -127,9 +127,9 @@
     /* How long the picture took to come, from the moment it was asked (the link asked first included): Stream Info shows it,
        and the log, so a slow network can be told from a slow app */
     var askedAt = 0, startedIn = 0;
-    function firstPicture() {
+    function firstPicture(at) {
         if (!askedAt || startedIn) return;
-        startedIn = Date.now() - askedAt;
+        startedIn = Math.max(1, (at || Date.now()) - askedAt);
         TV.log("started in " + startedIn + " ms" + (attempts ? " (after " + attempts + " reconnection" + (attempts > 1 ? "s" : "") + ")" : ""));
     }
     var DELAYS = [800, 2000, 4000, 6000, 8000];
@@ -302,7 +302,8 @@
         if (TV.mark) TV.mark("player");
         var my = ++token;
         clearTimeout(watchdog); clearTimeout(retryTimer);
-        closeAv();
+        var replaceLive = useAv && av.replaceLive && cur && cur.opts.live && opts.live && !again && av.getState() === "PLAYING";
+        if (!replaceLive) closeAv();
         shelved = null;
         cur = { url: url, opts: opts, token: my };
         if (!again) lastTime = 0;
@@ -335,7 +336,7 @@
             return;
         }
         try {
-            av.open(url);
+            if (TV.ANDROID) av.open(url, opts, replaceLive); else av.open(url);
             // A server that only lets some players in (core.js remembered which): the same name for its streams
             var ua = TV.uaFor ? TV.uaFor(url) : "";
             if (ua || TV.ANDROID) { try { av.setStreamingProperty("USER_AGENT", ua); } catch (e) { TV.log("user agent: " + e.message); } }
@@ -343,12 +344,14 @@
                 onbufferingstart: function () { if (cur && cur.token === my) { buffering = true; emit("onBuffering", true); } },
                 onbufferingprogress: function () {},
                 onbufferingcomplete: function () { if (cur && cur.token === my) { buffering = false; emit("onBuffering", false); } },
+                onfirstframe: function (at) { if (cur && cur.token === my) firstPicture(at); },
                 oncurrentplaytime: function (ms) {
                     if (!cur || cur.token !== my) return;
                     if (TV.DEV && Math.floor(ms / 5000) !== Math.floor(lastTime / 5000)) TV.log("playing " + (ms / 1000).toFixed(1) + " s, " + av.getState());
                     if (!started) {
-                        started = true; goodSince = Date.now(); firstPicture();
+                        started = true; goodSince = Date.now();
                         var si = streamInfo();
+                        if (!av.reportsFirstFrame || !si) firstPicture();
                         if (si) TV.log("picture " + si.w + "x" + si.h + " " + si.codec + " " + si.fps + "fps");
                         if (opts._try2k) { opts._try2k = false; rememberNoUhd(url); TV.log("plays without the 4K mode: remembered"); }
                         if (si && si.w >= 3000 && !opts.uhd && !opts._was4k && canUhd() && TV.TIZEN) {
@@ -382,7 +385,7 @@
             if (opts.uhd && canUhd()) { try { av.setStreamingProperty("SET_MODE_4K", "TRUE"); } catch (e) { TV.log("4K mode: " + e.message); } }
             // A stream with several qualities (HLS, DASH): the best one from the start, never the lowest
             // (by default the TV starts low and can stay there: the picture looked compressed)
-            if (/\.(m3u8|mpd)(\?|$)|\/hls\/|format=m3u8/i.test(url)) {
+            if (!av.replaceLive && /\.(m3u8|mpd)(\?|$)|\/hls\/|format=m3u8/i.test(url)) {
                 try { av.setStreamingProperty("ADAPTIVE_INFO", "STARTBITRATE=HIGHEST|SKIPBITRATE=LOWEST"); } catch (e) { TV.log("adaptive: " + e.message); }
             }
             // A cushion against small network hiccups: 3 s before starting, 8 s after a pause in the stream
@@ -686,7 +689,7 @@
         if (TV.ANDROID && B && typeof B.videoTracks === "function") {
             try {
                 var v = JSON.parse(B.videoTracks() || "{}");
-                if (v.list && v.list.length > 1) return Promise.resolve({ native: true, current: v.override >= 0 ? v.override : "auto",
+                if (v.list && v.list.length > 1) return Promise.resolve({ native: true, current: v.mode || (v.override >= 0 ? v.override : "auto"),
                     list: v.list.map(function (t) { return { id: t.index, w: t.w, h: t.h, bw: t.bitrate }; }).sort(function (a, b) { return (b.h - a.h) || (b.bw - a.bw); }) });
             } catch (e) {}
         }
@@ -702,7 +705,7 @@
         if (!cur) return;
         var o = cur.opts, B = global.APLAndroid;
         if (TV.ANDROID && B && typeof B.selectVideo === "function" && o._master === undefined) {
-            B.selectVideo(id === "auto" ? -1 : id | 0);
+            B.selectVideo(id === "auto" ? -1 : id === "best" ? -2 : id | 0);
             TV.log("quality " + id);
             return;
         }
@@ -715,6 +718,11 @@
 
     /* The video plane under the page: setting the window does not restart the stream */
     function setRect(r) { if (cur) cur.opts.rect = r; place(r); }
+    function setPreview(on) {
+        if (cur) cur.opts.preview = on;
+        var B = global.APLAndroid;
+        if (TV.ANDROID && B && B.preview) B.preview(on);
+    }
 
     /* Android: a live channel back from standby, or from another app after a while, starts again live. The stream
        paused for minutes or hours came back as a still picture, and the frozen picture made APL TV take HLS for the
@@ -786,7 +794,7 @@
 
     TV.player = {
         play: play, stop: stop, state: state, pause: pause, resume: resume, toggle: toggle, position: position, duration: duration, seekTo: seekTo,
-        tracks: tracks, currentTrack: currentTrack, selectTrack: selectTrack, subtitlesOff: subtitlesOff, subtitleDelay: subtitleDelay, setRect: setRect, setPicture: setPicture,
+        tracks: tracks, currentTrack: currentTrack, selectTrack: selectTrack, subtitlesOff: subtitlesOff, subtitleDelay: subtitleDelay, setRect: setRect, setPreview: setPreview, setPicture: setPicture,
         current: function () { return cur; }, isBuffering: function () { return buffering; }, FULL: FULL, native: useAv,
         backAt: function () { return backAt; },
         streamInfo: function () { return useAv && cur ? streamInfo() : null; },

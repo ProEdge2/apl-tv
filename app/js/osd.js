@@ -579,6 +579,8 @@
             items.push({ head: T("Stream Quality") });
             var pick = function (id) { return function () { closePop(); streamQ.current = id; stateBox.classList.add("is-on"); TV.player.setQuality(id); show(); }; };
             items.push({ label: T("Automatic"), sub: T("The best your connection allows"), check: streamQ.current === "auto", run: pick("auto") });
+            if (streamQ.native && global.APLAndroid && global.APLAndroid.openSource)
+                items.push({ label: T("Best Quality"), check: streamQ.current === "best", run: pick("best") });
             streamQ.list.forEach(function (q) { items.push({ label: qName(q), sub: q.bw ? mbps(q.bw) : "", check: streamQ.current === q.id, run: pick(q.id) }); });
         }
         if (!items.length) items.push({ label: T("Only one quality"), run: function () { closePop(); } });
@@ -608,10 +610,12 @@
         row(T("Sound"), [codecName(s.acodec), chName(s.channels), +s.rate ? (s.rate >= 1000 ? Math.round(s.rate / 100) / 10 : s.rate) + " kHz" : "", +s.abitrate > 0 ? mbps(s.abitrate) : ""].filter(Boolean).join(" · "));
         var took = TV.player.startedIn ? TV.player.startedIn() : 0;
         row(T("Time to Start"), took ? T("{n} s", { n: (Math.round(took / 100) / 10).toLocaleString(TV.locale) }) : "");
+        row(T("Rebuffering"), s.rebuffers !== undefined ? String(s.rebuffers) + " · " + T("{n} s", { n: (Math.round(s.rebufferMs / 100) / 10).toLocaleString(TV.locale) }) : "");
+        row(T("Display Refresh Rate"), s.refreshRate > 0 ? (Math.round(s.refreshRate * 1000) / 1000).toLocaleString(TV.locale) + " Hz" : "");
         row(T("Connection Speed"), +s.bandwidth > 0 ? mbps(s.bandwidth) : "");
         row(T("Buffer"), s.buffered !== undefined && s.buffered >= 0 ? T("{n} s ahead", { n: Math.round(s.buffered) }) : "");
         row(T("Dropped Frames"), s.dropped !== undefined ? String(s.dropped) + (s.frames ? " / " + s.frames : "") : "");
-        if (streamQ && streamQ.list.length > 1) row(T("Stream Quality"), streamQ.current === "auto" ? T("Automatic") : qName(streamQ.list.filter(function (q) { return q.id === streamQ.current; })[0] || {}));
+        if (streamQ && streamQ.list.length > 1) row(T("Stream Quality"), streamQ.current === "auto" ? T("Automatic") : streamQ.current === "best" ? T("Best Quality") : qName(streamQ.list.filter(function (q) { return q.id === streamQ.current; })[0] || {}));
         row(T("Stream"), [s.format || "", s.engine || ""].filter(Boolean).join(" · "));
         if (items.length < 2) items.unshift({ label: T("Waiting for the picture…"), run: function () {} });
         return items;

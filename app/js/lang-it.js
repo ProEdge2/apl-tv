@@ -4,6 +4,22 @@
    {name} placeholders stay as they are.
    ============================================================ */
 window.TV_LANG_IT = {
+    "Last Channel": "Ultimo canale",
+    "Best Quality": "Qualità migliore",
+    "Rebuffering": "Pause per il buffering",
+    "Display Refresh Rate": "Frequenza di aggiornamento dello schermo",
+    "Adaptive Stream Quality": "Qualità adattiva dello streaming",
+    "Automatic adjusts HLS and DASH quality as your connection changes. Best Quality always uses the highest supported bitrate.": "La modalità automatica adatta la qualità HLS e DASH alla connessione. Qualità migliore usa sempre il bitrate massimo supportato.",
+    "Prefer Full HD for Live TV": "Preferisci Full HD per la TV in diretta",
+    "When Full HD and 4K versions are grouped on one channel card, start in Full HD. You can still select 4K from Quality.": "Se le versioni Full HD e 4K sono raggruppate su una scheda del canale, avvia in Full HD. Puoi comunque scegliere 4K da Qualità.",
+    "Movies and Series": "Film e serie",
+    "All Sources": "Tutte le fonti",
+    "Match Frame Rate": "Adatta la frequenza dei fotogrammi",
+    "Match the TV refresh rate to full-screen video, including live TV with All Sources. HDMI switching can briefly blank the screen.": "Adatta la frequenza del televisore al video a schermo intero, incluse le dirette con Tutte le fonti. Il cambio di modalità HDMI può oscurare brevemente lo schermo.",
+    "Android TV Home Shortcuts": "Scorciatoie nella schermata Home di Android TV",
+    "Show Last Channel and Continue Watching in an APL TV row on Android TV Home.": "Mostra Ultimo canale e Continua a guardare in una riga di APL TV nella schermata Home di Android TV.",
+    "Show on Home": "Mostra nella schermata Home",
+    "Remove from Home": "Rimuovi dalla schermata Home",
     "Press OK for the sound": "Premi OK per l'audio",
     "Paused · OK to play": "In pausa · OK per riprodurre",
     "OK pause · ◀ ▶ 10 s · Back to the match": "OK pausa · ◀ ▶ 10 s · Indietro alla partita",
