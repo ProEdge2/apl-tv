@@ -271,18 +271,31 @@ final class Helper {
     private static String err(String m) { return "{\"error\":" + JSONObject.quote(m == null ? "error" : m) + "}"; }
 
     /* ---------- who may ask ---------- */
+    /* The device's addresses, the home network's first: the phone page's QR code shows the first one. A VPN's address
+       (Tailscale's 100.64.0.0/10, a tun/wg/ppp interface) comes last: listed first, the phone, on the home Wi-Fi but not
+       on the VPN, could not open the page. It still lets in a phone that is on the VPN. */
     private static List<String> lanAddresses() {
-        List<String> out = new ArrayList<>();
+        List<String> home = new ArrayList<>(), other = new ArrayList<>(), vpn = new ArrayList<>();
         try {
             Enumeration<NetworkInterface> ns = NetworkInterface.getNetworkInterfaces();
             while (ns != null && ns.hasMoreElements()) {
                 NetworkInterface n = ns.nextElement();
                 if (!n.isUp() || n.isLoopback()) continue;
+                String name = n.getName() == null ? "" : n.getName().toLowerCase(Locale.US);
+                boolean tunnel = name.startsWith("tun") || name.startsWith("wg") || name.startsWith("ppp") || name.startsWith("tailscale") || name.startsWith("ipsec");
                 Enumeration<InetAddress> as = n.getInetAddresses();
-                while (as.hasMoreElements()) { InetAddress a = as.nextElement(); if (a instanceof Inet4Address && !a.isLoopbackAddress()) out.add(a.getHostAddress()); }
+                while (as.hasMoreElements()) {
+                    InetAddress a = as.nextElement();
+                    if (!(a instanceof Inet4Address) || a.isLoopbackAddress()) continue;
+                    byte[] b = a.getAddress();
+                    boolean cgnat = (b[0] & 0xff) == 100 && (b[1] & 0xc0) == 64;          // 100.64.0.0/10: Tailscale, carrier NAT
+                    (tunnel || cgnat ? vpn : a.isSiteLocalAddress() ? home : other).add(a.getHostAddress());
+                }
             }
         } catch (Exception ignored) {}
-        return out;
+        home.addAll(other);
+        home.addAll(vpn);
+        return home;
     }
     private static boolean isLocal(Req r) {
         String a = r.remote.replace("::ffff:", "");

@@ -599,6 +599,8 @@
         row(T("Video Format"), [codecName(s.vcodec), s.hdr || ""].filter(Boolean).join(" · "));
         row(T("Video Bitrate"), +s.vbitrate > 0 ? mbps(s.vbitrate) : "");
         row(T("Sound"), [codecName(s.acodec), chName(s.channels), +s.rate ? (s.rate >= 1000 ? Math.round(s.rate / 100) / 10 : s.rate) + " kHz" : "", +s.abitrate > 0 ? mbps(s.abitrate) : ""].filter(Boolean).join(" · "));
+        var took = TV.player.startedIn ? TV.player.startedIn() : 0;
+        row(T("Time to Start"), took ? T("{n} s", { n: (Math.round(took / 100) / 10).toLocaleString(TV.locale) }) : "");
         row(T("Connection Speed"), +s.bandwidth > 0 ? mbps(s.bandwidth) : "");
         row(T("Buffer"), s.buffered !== undefined && s.buffered >= 0 ? T("{n} s ahead", { n: Math.round(s.buffered) }) : "");
         row(T("Dropped Frames"), s.dropped !== undefined ? String(s.dropped) + (s.frames ? " / " + s.frames : "") : "");

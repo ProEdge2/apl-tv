@@ -211,14 +211,20 @@ final class Player {
             view.setVisibility(View.VISIBLE);
         });
     }
-    void prepare() {
+    void prepare() { prepare(-1); }
+    /* Opened where it should start, and played as soon as it is ready: a movie resumed at 1 h no longer buffers its first
+       seconds and then jumps (twice the waiting), and nothing waits for the page to say "play" (js/android.js startsAt) */
+    void prepareAt(long ms) { prepare(Math.max(0, ms)); }
+    private void prepare(long startMs) {
         ui.post(() -> {
             if (exo == null || url == null) return;
             MediaItem.Builder b = new MediaItem.Builder().setUri(Uri.parse(url));
             String l = url.toLowerCase();
             if (l.contains(".m3u8") || l.contains("/hls/") || l.contains("format=m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8);
             else if (l.contains(".mpd")) b.setMimeType(MimeTypes.APPLICATION_MPD);
-            exo.setMediaItem(b.build());
+            if (startMs > 0) { exo.setMediaItem(b.build(), startMs); positionMs = startMs; }
+            else exo.setMediaItem(b.build());
+            if (startMs >= 0) wantPlay = true;           // prepareAt: plays once ready (onPlaybackStateChanged, READY)
             exo.setPlayWhenReady(false);
             exo.prepare();
         });

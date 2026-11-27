@@ -1235,5 +1235,8 @@ window.TV_LANG_ES = {
     "APL TV and Simkl then keep your watched titles, My List and Continue Watching the same, both ways.": "Después, APL TV y Simkl mantienen iguales lo que has visto, Mi lista y Seguir viendo, en ambos sentidos.",
     "Linked! Syncing with Simkl…": "¡Vinculada! Sincronizando con Simkl…",
     "APL TV has no Simkl Client ID yet. Add one in Settings › Simkl.": "APL TV aún no tiene un Client ID de Simkl. Añade uno en Ajustes › Simkl.",
-    "Simkl does not accept this Client ID. It must be an app of the type “TV, devices & command line”.": "Simkl no acepta este Client ID. Debe ser una app del tipo «TV, devices & command line»."
+    "Simkl does not accept this Client ID. It must be an app of the type “TV, devices & command line”.": "Simkl no acepta este Client ID. Debe ser una app del tipo «TV, devices & command line».",
+    /* 1.4.17: playback start time */
+    "Time to Start": "Tiempo de inicio",
+    "{n} s": "{n} s"
 };

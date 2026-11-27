@@ -390,6 +390,8 @@ public class MainActivity extends Activity {
         // The player (Player.java): the same calls as Samsung's AVPlay, through js/android.js
         @JavascriptInterface public void open(String url) { player.open(url); }
         @JavascriptInterface public void prepare() { player.prepare(); }
+        /* 1.4.17: opened at the place to start from (ms), playing as soon as it is ready (js/android.js startsAt) */
+        @JavascriptInterface public void prepareAt(long ms) { player.prepareAt(ms); }
         @JavascriptInterface public void play() { player.play(); }
         @JavascriptInterface public void pause() { player.pause(); }
         @JavascriptInterface public void stop() { player.stop(); }
