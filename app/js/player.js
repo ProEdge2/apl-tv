@@ -34,7 +34,7 @@
         video.addEventListener("playing", function () {
             if (!mine()) return;
             buffering = false;
-            if (!started) { started = true; goodSince = Date.now(); TV.log("picture " + video.videoWidth + "x" + video.videoHeight); }
+            if (!started) { started = true; goodSince = Date.now(); firstPicture(); TV.log("picture " + video.videoWidth + "x" + video.videoHeight); }
             tickAt = Date.now();
             emit("onBuffering", false); emit("onPlaying");
         });
@@ -46,7 +46,7 @@
                 tickAt = Date.now();
                 // LG does not always say "playing" again after a short wait: the picture moving is enough
                 if (buffering && lastTime > 0 && !video.paused) { buffering = false; emit("onBuffering", false); }
-                if (!started && ms > 0 && !video.paused) { started = true; goodSince = Date.now(); emit("onPlaying"); }
+                if (!started && ms > 0 && !video.paused) { started = true; goodSince = Date.now(); firstPicture(); emit("onPlaying"); }
             }
             lastTime = ms; emit("onTime", ms);
         });
@@ -124,6 +124,14 @@
        up to 5 times in a row (0.8, 2, 4, 6, 8 s apart), a movie at the place it had reached. After a minute
        of good playback the count starts again. Nothing is reopened while the picture moves. */
     var tickAt = 0, started = false, attempts = 0, goodSince = 0, stallTimer = null, retryTimer = null, bufAt = 0, userPaused = false;
+    /* How long the picture took to come, from the moment it was asked (the link asked first included): Stream Info shows it,
+       and the log, so a slow network can be told from a slow app */
+    var askedAt = 0, startedIn = 0;
+    function firstPicture() {
+        if (!askedAt || startedIn) return;
+        startedIn = Date.now() - askedAt;
+        TV.log("started in " + startedIn + " ms" + (attempts ? " (after " + attempts + " reconnection" + (attempts > 1 ? "s" : "") + ")" : ""));
+    }
     var DELAYS = [800, 2000, 4000, 6000, 8000];
     /* The provider refused the connection (#27: an account for one screen, the stream just closed still counted by the
        provider for a while, at the next episode or after a stutter): longer waits, about a minute in all */
@@ -242,6 +250,7 @@
     function play(url, opts) {
         opts = opts || {};
         loggedTracks = false;
+        if (!opts._asked) { opts._asked = true; askedAt = Date.now(); startedIn = 0; }
         if (!cur || cur.url !== url) noteLeft();
         // A Stalker portal's channel or movie, a media server's (Jellyfin, Emby, Plex), a Stremio title or a public
         // domain movie: its real link is asked first (a portal's lasts a short time only; a server's carries its key;
@@ -338,7 +347,7 @@
                     if (!cur || cur.token !== my) return;
                     if (TV.DEV && Math.floor(ms / 5000) !== Math.floor(lastTime / 5000)) TV.log("playing " + (ms / 1000).toFixed(1) + " s, " + av.getState());
                     if (!started) {
-                        started = true; goodSince = Date.now();
+                        started = true; goodSince = Date.now(); firstPicture();
                         var si = streamInfo();
                         if (si) TV.log("picture " + si.w + "x" + si.h + " " + si.codec + " " + si.fps + "fps");
                         if (opts._try2k) { opts._try2k = false; rememberNoUhd(url); TV.log("plays without the 4K mode: remembered"); }
@@ -382,9 +391,11 @@
                 av.setBufferingParam("PLAYER_BUFFER_FOR_RESUME", "PLAYER_BUFFER_SIZE_IN_SECOND", opts.live ? 8 : 10);
             } catch (e) {}
             if (opts.live) { try { av.setTimeoutForBuffering(15); } catch (e) {} }
+            // Android (js/android.js startsAt): the player opens at the place itself, and plays as soon as it is ready
+            var startMs = opts.start && !opts.live ? Math.floor(opts.start * 1000) : 0, atStart = !!av.startsAt;
             av.prepareAsync(function () {
                 if (!cur || cur.token !== my) return;
-                if (opts.start && !opts.live) { try { av.seekTo(Math.floor(opts.start * 1000)); } catch (e) {} }
+                if (startMs && !atStart) { try { av.seekTo(startMs); } catch (e) {} }
                 emit("onReady");                                   // audio tracks and subtitles are known now
                 try { av.play(); emit("onPlaying"); } catch (e) { fail("play: " + e.message); }
             }, function (err) {
@@ -395,7 +406,7 @@
                 if (opts.uhd && TV.TIZEN && !opts._was4k) { opts.uhd = false; opts._was4k = true; opts._try2k = true; TV.log("next try without the 4K mode"); }
                 // a movie that cannot open: its error stays, the start timer does not add a "timeout" later
                 if (again || opts.live || refusedConn(why)) reconnect("prepare " + why); else fail(why);
-            });
+            }, startMs);
         } catch (e) {
             TV.log("open failed " + e.message);
             emit("onError", e.message);
@@ -779,6 +790,6 @@
         current: function () { return cur; }, isBuffering: function () { return buffering; }, FULL: FULL, native: useAv,
         backAt: function () { return backAt; },
         streamInfo: function () { return useAv && cur ? streamInfo() : null; },
-        stats: stats, qualities: qualities, setQuality: setQuality
+        stats: stats, qualities: qualities, setQuality: setQuality, startedIn: function () { return startedIn; }
     };
 })(window);

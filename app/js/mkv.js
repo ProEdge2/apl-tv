@@ -163,6 +163,10 @@
     function hostOf(u) { var m = /^https?:\/\/([^\/?#]+)/i.exec(String(u || "")); return m ? m[1].toLowerCase() : ""; }
     function wanted(url, opts) {
         if (opts && opts.live) return false;
+        /* Android: ExoPlayer reads the tracks' languages and names from the file itself (Player.java readTracks). Read
+           here too, it was only a wait before every .mkv: up to 1 MB and 2 s, an extra connection and its round trips
+           (slow over a VPN such as Tailscale) */
+        if (TV.ANDROID) return false;
         if (busyHosts[hostOf(url)]) { TV.log("mkv: track names not read (this server refused it before, the player alone asks)"); return false; }
         if (!/^https?:\/\/[^?#]+\.mkv([?#]|$)/i.test(String(url || ""))) {
             // what the link ends with, so a film that should have been read can be told (#34: a second film, from the same

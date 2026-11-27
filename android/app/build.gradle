@@ -7,13 +7,18 @@ plugins {
 
 def aplVersion = project.findProperty("aplVersion") ?: "1.0.0"
 def parts = aplVersion.tokenize(".").collect { it as int } + [0, 0, 0]
+/* A test build (make-android.py --test): another app id and name, so it installs next to APL TV and keeps its own
+   playlists and settings; its Top Shelf provider gets its own name too (two apps can't share one) */
+def appId = project.findProperty("aplAppId") ?: "com.knikt.apltv"
+def appLabel = project.findProperty("aplLabel") ?: "APL TV"
 
 android {
     namespace "com.knikt.apltv"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.knikt.apltv"
+        applicationId appId
+        manifestPlaceholders = [aplLabel: appLabel, shelfAuthority: appId + ".shelf"]
         minSdk 21
         targetSdk 35
         versionCode parts[0] * 10000 + parts[1] * 100 + parts[2]

@@ -182,8 +182,23 @@
 
     /* ---------- where a series starts again: the episode in progress, or the next one after a watched one ---------- */
     function allEps() { var all = []; seasonKeys.forEach(function (k) { all = all.concat(seasons[k]); }); return all; }
+    /* An episode by its numbers (Simkl's Up Next or a place paused in another app, js/simkl.js): that one, else the
+       first one after it that your playlist has (a season numbered differently, an episode missing) */
+    function epAt(se, en) {
+        var all = allEps(), after = null;
+        for (var i = 0; i < all.length; i++) {
+            var s = +all[i].season, e = +all[i].episode;
+            if (s === +se && e === +en) return all[i];
+            if (!after && (s > +se || (s === +se && e > +en))) after = all[i];
+        }
+        return after;
+    }
     function startEp() {
         var r = D.resumeOf(item.id), ep = r && r.ep ? findEp(r.ep) : null;
+        if (!ep && r && r.se && r.en) {
+            ep = epAt(r.se, r.en);
+            if (ep && (+ep.season !== +r.se || +ep.episode !== +r.en)) return { ep: ep, pos: 0, next: true };
+        }
         if (!ep) return null;
         if (r.upNext) return { ep: ep, pos: 0, next: true };                 // set when the episode before was finished
         var er = D.resumeOf(item.id + "|" + ep.id);
@@ -225,7 +240,7 @@
         var r = D.resumeOf(it.id), start = it.kind === "series" ? startEp() : null;
         if (it.kind === "movie" && r && r.dur && r.pos > 60 && !r.done) {
             mainEl.appendChild(el("div", "detail__progress", "<div class='bar'><i style='width:" + Math.round(100 * r.pos / r.dur) + "%'></i></div><span>" +
-                esc(T("{n} min left", { n: Math.max(1, Math.round((r.dur - r.pos) / 60)) })) + "</span>"));
+                esc(r.est ? "" : T("{n} min left", { n: Math.max(1, Math.round((r.dur - r.pos) / 60)) })) + "</span>"));
         }
         if (start && !start.next && start.pos > 60) {
             var er = D.resumeOf(it.id + "|" + start.ep.id);

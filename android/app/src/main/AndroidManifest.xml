@@ -16,7 +16,7 @@
     </queries>
 
     <application
-        android:label="APL TV"
+        android:label="${aplLabel}"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
         android:allowBackup="false"
@@ -43,7 +43,7 @@
         <!-- APL Launcher's Top Shelf: what you were watching and your last channel, for APL Launcher only -->
         <provider
             android:name=".ShelfProvider"
-            android:authorities="com.knikt.apltv.shelf"
+            android:authorities="${shelfAuthority}"
             android:exported="true" />
     </application>
 </manifest>

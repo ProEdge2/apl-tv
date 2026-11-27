@@ -127,7 +127,10 @@ final class Player {
         android.app.ActivityManager am = (android.app.ActivityManager) act.getSystemService(android.content.Context.ACTIVITY_SERVICE);
         long heapMb = am != null ? am.getLargeMemoryClass() : 256;
         int bufferBytes = (int) Math.max(16L << 20, Math.min(Crash.small(act) ? 32L << 20 : 128L << 20, (heapMb << 20) / 4));   // little memory: 32 MB (about 50 s of a 1080p channel)
-        DefaultLoadControl load = new DefaultLoadControl.Builder().setBufferDurationsMs(15000, 50000, 2500, 5000).setTargetBufferBytes(bufferBytes).build();
+        /* Playing once 1 s is in (2.5 s before), 2.5 s after the stream paused (5 s): a channel or a movie starts sooner,
+           most of all from a server that sends at the stream's own pace (a provider without a burst, a home server
+           reached over a VPN such as Tailscale). Media3's own defaults since 1.6 are 1 s and 2 s. */
+        DefaultLoadControl load = new DefaultLoadControl.Builder().setBufferDurationsMs(15000, 50000, 1000, 2500).setTargetBufferBytes(bufferBytes).build();
         meter = new DefaultBandwidthMeter.Builder(act).build();
         exo = new ExoPlayer.Builder(act, new SyncedRenderers(act).setEnableDecoderFallback(true))
             .setTrackSelector(selector)
@@ -211,14 +214,20 @@ final class Player {
             view.setVisibility(View.VISIBLE);
         });
     }
-    void prepare() {
+    void prepare() { prepare(-1); }
+    /* Opened where it should start, and played as soon as it is ready: a movie resumed at 1 h no longer buffers its first
+       seconds and then jumps (twice the waiting), and nothing waits for the page to say "play" (js/android.js startsAt) */
+    void prepareAt(long ms) { prepare(Math.max(0, ms)); }
+    private void prepare(long startMs) {
         ui.post(() -> {
             if (exo == null || url == null) return;
             MediaItem.Builder b = new MediaItem.Builder().setUri(Uri.parse(url));
             String l = url.toLowerCase();
             if (l.contains(".m3u8") || l.contains("/hls/") || l.contains("format=m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8);
             else if (l.contains(".mpd")) b.setMimeType(MimeTypes.APPLICATION_MPD);
-            exo.setMediaItem(b.build());
+            if (startMs > 0) { exo.setMediaItem(b.build(), startMs); positionMs = startMs; }
+            else exo.setMediaItem(b.build());
+            if (startMs >= 0) wantPlay = true;           // prepareAt: plays once ready (onPlaybackStateChanged, READY)
             exo.setPlayWhenReady(false);
             exo.prepare();
         });
@@ -349,7 +358,8 @@ final class Player {
         if (mime == null) return "?";
         switch (mime) {
             case MimeTypes.AUDIO_AC3: return "AC3";
-            case MimeTypes.AUDIO_E_AC3: case MimeTypes.AUDIO_E_AC3_JOC: return "E-AC3";
+            case MimeTypes.AUDIO_E_AC3: return "E-AC3";
+            case MimeTypes.AUDIO_E_AC3_JOC: return "E-AC3 Atmos";
             case MimeTypes.AUDIO_AC4: return "AC4";
             case MimeTypes.AUDIO_DTS: return "DTS";
             case MimeTypes.AUDIO_DTS_HD: return "DTS-HD";

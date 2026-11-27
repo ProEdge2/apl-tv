@@ -59,7 +59,14 @@
     var avplay = {
         open: function (url) { state = "IDLE"; onPrepared = onPrepareFail = null; B.open(String(url)); },
         setListener: function (l) { listener = l || {}; },
-        prepareAsync: function (ok, fail) { onPrepared = ok || function () {}; onPrepareFail = fail || null; B.prepare(); },
+        prepareAsync: function (ok, fail, startMs) {
+            onPrepared = ok || function () {}; onPrepareFail = fail || null;
+            // an APK that can (1.4.17): opened at the place to start from, and playing as soon as it is ready
+            if (B.prepareAt) B.prepareAt(Math.max(0, +startMs || 0)); else B.prepare();
+        },
+        /* The movie opens where it should start (prepareAsync's startMs): no buffering of its first seconds, then a jump,
+           and no round trip to the page before it plays. An older APK: prepareAsync, then seekTo and play, as before */
+        startsAt: !!B.prepareAt,
         play: function () { state = "PLAYING"; B.play(); },
         pause: function () { state = "PAUSED"; B.pause(); },
         stop: function () { state = "IDLE"; B.stop(); },
