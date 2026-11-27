@@ -358,7 +358,8 @@ final class Player {
         if (mime == null) return "?";
         switch (mime) {
             case MimeTypes.AUDIO_AC3: return "AC3";
-            case MimeTypes.AUDIO_E_AC3: case MimeTypes.AUDIO_E_AC3_JOC: return "E-AC3";
+            case MimeTypes.AUDIO_E_AC3: return "E-AC3";
+            case MimeTypes.AUDIO_E_AC3_JOC: return "E-AC3 Atmos";
             case MimeTypes.AUDIO_AC4: return "AC4";
             case MimeTypes.AUDIO_DTS: return "DTS";
             case MimeTypes.AUDIO_DTS_HD: return "DTS-HD";

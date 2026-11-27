@@ -26,9 +26,12 @@ what current documentation and other players say, and what to change, ranked by 
 | 10 | Prewarm WebView at app start (`WebViewCompat.startUpWebView`) | Faster cold start | Small | 🔜 |
 | 11 | Async JS bridge (`addWebMessageListener` + `WebViewAssetLoader`) | Remote keys and player events never block the page | Larger | 🔜 later |
 | 12 | Show the time each start took | Tells a slow network from a slow app | Small | ✅ Stream Info › Time to Start |
+| 13 | When several sound tracks share your language, take the one with the most channels (Atmos first among equals) | Surround and Atmos reach the receiver instead of the first stereo track | Tiny | ✅ `osd.js` (Android) |
+| 14 | Name Dolby Digital Plus Atmos in Stream Info | You can see that Atmos is playing | Tiny | ✅ |
+| 15 | FFmpeg audio extension | Sound for TrueHD/DTS films on TVs and soundbars that can't take them | Medium | 🔜 |
 | — | Leave tunneled playback off; never preload live channels | Avoids known bugs and single-connection refusals | — | Decision |
 
-Items 1–3, 7 and 12 are already in PR #1, along with the phone-page QR fix for Tailscale (§2). The Java parts reach
+Items 1–3, 7, 12, 13 and 14 are already in PR #1, along with the phone-page QR fix for Tailscale (§2). The Java parts reach
 the SHIELD only through a new APK, because the automatic updater replaces only the web app.
 
 ---
@@ -259,13 +262,85 @@ own pace rather than in a burst makes the start-buffer wait last its full length
 
 ---
 
-## 5. Testing on a Mac
+## 5. 4K, HDR and Dolby Atmos
+
+**In short:** 4K, HDR and Atmos passthrough mostly work already. The app was getting in the way of Atmos in one place
+(track choice, now fixed). The remaining work is about keeping passthrough reliable, giving TVs without a receiver
+sound for every format, and setting up the SHIELD and the HDMI chain correctly.
+
+### What already works
+- **4K video:**
+  - The video surface renders at the output resolution (4K), even though the UI is 1080p. [U8][U10]
+  - 4K versions of a channel are grouped with its HD/FHD versions and put first when `Player.canUhd()` finds a 4K
+    display mode and an HEVC decoder for 2160p50. A SHIELD has both.
+  - HLS/DASH streams start at their highest quality (`ADAPTIVE_INFO`, then `setForceHighestSupportedBitrate`).
+  - ExoPlayer's track selector sizes against the physical display mode (4K), not the 1080p UI. [U9]
+- **Decoding on SHIELD:** HEVC Main10 4K60 HDR, VP9 4K60 and H.264 up to 4K. [P16] There's no AV1, but ExoPlayer
+  skips renditions the device can't decode by itself.
+- **HDR:** SHIELD switches to HDR10 output by itself, and to Dolby Vision once that's enabled (§3.2). Stream Info
+  shows HDR10, HLG or Dolby Vision.
+- **Atmos and surround passthrough:** ExoPlayer passes AC3, E-AC3, **E-AC3 JOC (Dolby Digital Plus Atmos)**,
+  **TrueHD (including Atmos)**, DTS and DTS-HD to the receiver, whenever the SHIELD reports the receiver accepts them
+  (`AudioCapabilities`, `isDirectPlaybackSupported` on API 29+). [P29][P30] Nothing in the app blocks this.
+
+### Fixed now (PR #1)
+- **Track choice:** with an audio language set in Settings, the app used to take the *first* track in that language.
+  That's often the stereo AAC listed before the 5.1 or Atmos one, so Atmos never reached the receiver.
+  - **On Android** it now takes the track with the most channels, Atmos first among equals. Only playable tracks are
+    listed there, so this never picks one the device can't play.
+  - **Samsung and LG** are unchanged, because their lists can include tracks they can't play.
+- **Labels:** Stream Info says **Dolby Digital Plus Atmos** for `audio/eac3-joc` (`ec+3` in HLS), and the log says
+  "E-AC3 Atmos".
+
+### Recommended next
+1. **Keep passthrough across HDMI changes:** Media3 ≥ 1.8 with
+   `setAllowInvalidateSelectionsOnRendererCapabilitiesChange(true)`. On SHIELD, a display-mode switch could drop
+   Dolby/TrueHD to PCM. Frame-rate matching needs this fix. [P14][P15]
+2. **TrueHD Atmos dropouts:** these happen on the SHIELD Pro with receivers on streams with gaps or splices. Follow
+   androidx/media#3535, which has a MAT-packer workaround. [P31]
+3. **FFmpeg audio extension** (Media3 `decoder-ffmpeg`, built with the TrueHD, DTS and E-AC3 decoders): a TV or
+   soundbar that can't take TrueHD or DTS then gets PCM sound instead of "This device cannot play the sound of this
+   video".
+   - It's built from source with the NDK, and FFmpeg is LGPL.
+   - Decoding keeps the bed channels and loses the Atmos objects. Passthrough stays the first choice whenever the
+     receiver accepts the format.
+4. **Dolby Vision profile 5** on SHIELDs without a DV decoder (2015/2017): explain the failure instead of a generic
+   error (§3.2).
+5. **Bandwidth for 4K:**
+   - 4K HEVC IPTV needs about 15–25 Mb/s sustained, which a Tailscale relay usually can't hold. Keep the direct path
+     (§2).
+   - Stream Info's Connection Speed and Buffer show whether it keeps up.
+   - The app already drops to a lower quality when the picture freezes ("videostall").
+6. **With frame-rate matching** (§3.1), keep 4K and change only the refresh rate. 1080p content then keeps NVIDIA's
+   AI upscaling.
+7. **Tunneling stays off** (§3.5), even though it's sometimes suggested for 4K HDR sync.
+8. **Optional:** 4K / HDR / Atmos badges on title pages, from the provider's names ("4K", "UHD", "HDR", "ATMOS" are
+   already read for grouping versions).
+
+### What to set on the SHIELD and the HDMI chain
+- **Display:** 4K at the TV's native rate (e.g. 4K 59.940 Hz). Turn on matching the content's dynamic range/color
+  space if the TV does HDR. ❓ Menu names vary between firmware versions.
+- **Sound:**
+  - Settings › Device Preferences › Display & Sound › Advanced sound settings › Surround sound.
+  - Set **Available formats** to **Auto**, or to Manual with Dolby TrueHD/Atmos and DTS enabled for your receiver.
+    [P29]
+- **HDMI path:**
+  - **TrueHD Atmos** needs the receiver in the HDMI chain or on **eARC**.
+  - Plain **ARC** carries Dolby Digital Plus (including its Atmos variant) but not TrueHD or DTS-HD.
+- **Check:**
+  - Stream Info › Sound should say *Dolby Digital Plus Atmos* or *Dolby TrueHD*.
+  - The receiver's display should say *Atmos*.
+  - The app log lists every track and whether this device can play it (`tracks …`).
+
+---
+
+## 6. Testing on a Mac
 
 *(Filled in below once the emulator research is complete.)*
 
 ---
 
-## 6. Measuring each change on a real SHIELD
+## 7. Measuring each change on a real SHIELD
 
 1. **Connect from the Mac:**
    1. On the SHIELD, open Settings › Device Preferences › About and press Build 7 times.
@@ -288,7 +363,7 @@ own pace rather than in a burst makes the start-buffer wait last its full length
 
 ---
 
-## 7. Open questions
+## 8. Open questions
 
 These couldn't be verified from public sources and are worth checking on a SHIELD:
 - Whether `Surface.setFrameRate` on API 30 ever switches SHIELD's HDMI mode, and how SHIELD's "Match frame rate"
@@ -352,6 +427,7 @@ These couldn't be verified from public sources and are worth checking on a SHIEL
 - [U6] https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android11-release/core/java/android/view/SurfaceView.java
 - [U7] https://source.android.com/docs/core/graphics/hwc
 - [U8] https://developer.android.com/media/media3/ui/surface
+- [U9] https://github.com/androidx/media/blob/release/libraries/common/src/main/java/androidx/media3/common/util/Util.java (getCurrentDisplayModeSize)
 - [U10] https://lists.mythtv.org/pipermail/mythtv-dev/2018-August/076974.html
 - [U11] https://forums.plex.tv/t/wrong-x-plex-device-screen-resolution-detection-on-nvidia-shield-pro-2019/816662
 - [U12] https://forums.developer.nvidia.com/t/flutter-app-4k-rendering-on-nvidia-shield/312695

@@ -155,6 +155,9 @@
     function isForced(t) { return !!t.forced || /\bforc|\bforzad|\bforzat|\bwymusz/i.test(String(t.name || "")); }
 
     /* Audio and subtitles of a new video: your language first, then the second choice (never OpenSubtitles) */
+    // Dolby Digital Plus with Atmos: "audio/eac3-joc", "ec+3" in an HLS stream, or a track named so
+    function isAtmos(t) { return /joc|atmos|ec\+3/i.test(String((t && t.codec) || "") + " " + String((t && t.name) || "")); }
+    function soundRank(t) { return (parseInt(t && t.channels, 10) || 0) * 10 + (isAtmos(t) ? 5 : 0); }
     function applyTrackPrefs() {
         if (tracksDone) return;
         var tr = TV.player.tracks();
@@ -171,6 +174,10 @@
                 if (!w || w === "none") continue;
                 if (w === "orig") hit = audio[0];
                 else audio.forEach(function (a) { if (!hit && norm(a.lang) === wantLang(w)) hit = a; });
+                /* Android lists only the sounds this device can play (Player.java). Several in that language (stereo and 5.1,
+                   Dolby Atmos): the one with the most channels, Atmos first among equals, so surround and Atmos reach the
+                   receiver instead of the first stereo track. Elsewhere: the first one, as before. */
+                if (hit && TV.ANDROID && w !== "orig") audio.forEach(function (a) { if (norm(a.lang) === wantLang(w) && soundRank(a) > soundRank(hit)) hit = a; });
                 if (hit) { chosenAudio = hit; if (hit.index !== curA) TV.player.selectTrack("AUDIO", hit.index); break; }
             }
         }
@@ -580,7 +587,7 @@
 
     /* ---------- Stream Info: what plays, as the player sees it (kept current while it is open) ---------- */
     function mbps(b) { b = +b || 0; return b >= 1e6 ? (b / 1e6).toFixed(b >= 1e7 ? 0 : 1) + " Mb/s" : Math.round(b / 1000) + " kb/s"; }
-    var CODECS = [[/^(avc|h\.?264|x264)/, "H.264"], [/^(hvc|hev|h\.?265|x265)/, "HEVC"], [/^av0?1/, "AV1"], [/^vp0?9/, "VP9"], [/^vp0?8/, "VP8"],
+    var CODECS = [[/^(avc|h\.?264|x264)/, "H.264"], [/^((ec-?3|e-?ac-?3)[-.]?joc|ec\+3)/, "Dolby Digital Plus Atmos"], [/^(hvc|hev|h\.?265|x265)/, "HEVC"], [/^av0?1/, "AV1"], [/^vp0?9/, "VP9"], [/^vp0?8/, "VP8"],
                   [/^(mpeg2|mp2v|mpeg-2|mpeg2video)/, "MPEG-2"], [/^(mp4a\.(69|6b|40\.34)|mp3|mpga)/, "MP3"], [/^(mp4a|aac|mpeg4-generic)/, "AAC"],
                   [/^(ac-?3|dolby ?digital$)/, "Dolby Digital"], [/^(ec-?3|e-?ac-?3)/, "Dolby Digital Plus"], [/^ac-?4/, "Dolby AC-4"], [/^(true-?hd|mlp)/, "Dolby TrueHD"], [/^(dolby-vision|dv(h|a)[e1v])/, "Dolby Vision"],
                   [/^dts[-.]?(hd|h|l|ma)/, "DTS-HD"], [/^dts/, "DTS"], [/^opus/, "Opus"], [/^flac/, "FLAC"], [/^(mpeg|mp2|mp1)/, "MPEG"], [/^(pcm|lpcm|raw)/, "PCM"]];
