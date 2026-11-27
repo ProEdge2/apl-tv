@@ -1039,7 +1039,7 @@
     }
     /* Your Jellyfin or Emby server hears where you are: once the picture moves, every 10 s, and once when
        the video stops (other sources: js/media.js sends nothing). A video that never started tells nothing.
-       Simkl hears it too (js/simkl.js), only when it starts and when it stops. */
+       Simkl hears it too (js/simkl.js: "watching now" after a minute, and where it stopped). */
     function tell(event) {
         if (!vod || vod.told === "stop") return;
         if (event === "start" ? vod.told : !vod.told) return;
@@ -1049,7 +1049,7 @@
         if (event !== "start" && !vod.ended && pos < 5) { if (event === "progress") return; pos = vod.start || 0; }
         vod.told = event === "stop" ? "stop" : "start";
         var at = vod.ended && dur ? dur : pos;
-        if (TV.simkl && TV.simkl.scrobble && event !== "progress") TV.simkl.scrobble(event, vod, at, dur, event === "stop" && !!dur && (vod.ended || (D.finished ? D.finished(at, dur, !vod.ep) : at > dur * 0.94)));
+        if (TV.simkl && TV.simkl.scrobble) TV.simkl.scrobble(event, vod, at, dur, event === "stop" && !!dur && (vod.ended || (D.finished ? D.finished(at, dur, !vod.ep) : at > dur * 0.94)));
         if (!TV.media || !TV.media.report) return;
         // finished: its whole length, so the server counts it as watched with its own settings
         TV.media.report(vod.url, event, at).then(function (ok) {

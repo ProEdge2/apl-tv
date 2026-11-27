@@ -367,9 +367,12 @@
     function queue() { return TV.load("simklOut", []) || []; }
     function sig(op) { return op.ref.g + JSON.stringify(op.ref.ids) + op.ref.title + "|" + (op.eps || []).map(function (e) { return e[0] + "x" + e[1]; }).join(","); }
     var OPPOSITE = { hist: "unhist", unhist: "hist", list: "unlist", unlist: "list" };
+    function titleSig(ref) { return ref.g + JSON.stringify(ref.ids) + ref.title; }
     function enqueue(op) {
         var q = queue(), s = sig(op);
         op.n = TV.uid();
+        // a place paused later, or the title watched to the end since: the older pause waiting for it goes
+        if (op.op === "pause" || op.op === "hist") q = q.filter(function (o) { return !(o.op === "pause" && o.ref && titleSig(o.ref) === titleSig(op.ref)); });
         // the opposite still waiting (marked, then unmarked before anything went out): both go
         for (var i = q.length - 1; i >= 0; i--) if (q[i].op === OPPOSITE[op.op] && q[i].ref && sig(q[i]) === s) { q.splice(i, 1); TV.save("simklOut", q); return; }
         q.push(op);
@@ -415,15 +418,18 @@
         if (!q.length) return Promise.resolve();
         var groups = [];
         q.forEach(function (op) {
-            var last = groups[groups.length - 1], ep = op.op === "unplay" ? "unplay" : ENDPOINT[op.op];
+            var last = groups[groups.length - 1], ep = op.op === "unplay" || op.op === "pause" ? op.op : ENDPOINT[op.op];
             if (!ep) return;
-            if (last && last.ep === ep && ep !== "unplay") last.ops.push(op); else groups.push({ ep: ep, ops: [op] });
+            if (last && last.ep === ep && ep !== "unplay" && ep !== "pause") last.ops.push(op); else groups.push({ ep: ep, ops: [op] });
         });
         var done = {}, stop = false;
         function forget(ops) { ops.forEach(function (o) { done[o.n] = 1; }); TV.save("simklOut", queue().filter(function (o) { return !done[o.n]; })); }
         flushing = sequence(groups, function (gr) {
             if (stop) return null;
-            var p = gr.ep === "unplay" ? write("DELETE", "/sync/playback/" + encodeURIComponent(gr.ops[0].id)) : write("POST", gr.ep, bodyOf(gr.ops));
+            // a pause older than a day is not sent: Simkl would date it now, newer than what you did since on another device
+            if (gr.ep === "pause" && Date.now() - gr.ops[0].at > 86400000) { forget(gr.ops); return null; }
+            var p = gr.ep === "unplay" ? write("DELETE", "/sync/playback/" + encodeURIComponent(gr.ops[0].id))
+                  : gr.ep === "pause" ? write("POST", "/scrobble/pause", gr.ops[0].body) : write("POST", gr.ep, bodyOf(gr.ops));
             return p.then(function (r) {
                 var nf = r && r.not_found, miss = nf ? (nf.movies || []).length + (nf.shows || []).length + (nf.episodes || []).length : 0;
                 TV.log("simkl: " + gr.ops.length + " change(s) sent (" + gr.ep + ")" + (miss ? ", " + miss + " not found on Simkl" : ""));
@@ -500,17 +506,25 @@
         });
         if (left.length !== M.play.length) { M.play = left; saveSoon(); }
     }
-    /* The player (js/osd.js tell): started, and stopped (finished or not) */
+    /* The player (js/osd.js tell): started, every 10 s, and stopped (finished or not). Simkl's "watching now" only after
+       a minute of this video, so a title opened by mistake and left at once sends nothing; once it was sent, the stop
+       always closes it (pause, or stop when finished) */
     function scrobble(event, o, pos, dur, done) {
-        if (!o || !o.item || o.noResume || (event !== "start" && event !== "stop")) return;
+        if (!o || !o.item || o.noResume) return;
         if (!(wants("Resume") || (done && wants("Watched")))) return;
         var pct = dur ? Math.min(100, Math.round(1000 * pos / dur) / 10) : 0, ep = o.ep, at = Date.now();
         if (ep && !+ep.episode) return;
+        if (event === "start") { o._sk = { from: pos || 0, sent: false }; return; }
+        var st = o._sk || (o._sk = { from: 0, sent: false });
+        if (event === "progress") {
+            if (st.sent || !wants("Resume") || pos - st.from < 60 || pct >= 95) return;
+            st.sent = true;
+        } else if (event !== "stop") return;
         refOf(o.item).then(function (ref) {
             if (!ref) return null;
             var b = { progress: pct };
             if (ep) { b.show = body(ref); b.episode = { season: +ep.season || 1, number: +ep.episode }; } else b.movie = body(ref);
-            if (event === "start") return wants("Resume") && pct < 95 ? write("POST", "/scrobble/start", b) : null;
+            if (event === "progress") return write("POST", "/scrobble/start", b);
             if (done) {
                 if (!wants("Watched")) return null;
                 b.progress = Math.max(pct, 90);                  // finished for APL TV: watched for Simkl too (from 80 %)
@@ -521,8 +535,12 @@
                     throw e;
                 });
             }
-            if (!wants("Resume") || pos < 60 || pct < 1) return null;
-            return write("POST", "/scrobble/pause", b);
+            if (!wants("Resume") || pct < 1 || (pos < 60 && !st.sent)) return null;
+            // not received (no network, Simkl busy): kept and sent with the next changes
+            return write("POST", "/scrobble/pause", b).catch(function (e) {
+                if (retryable(e)) enqueue({ op: "pause", ref: ref, body: b, at: at });
+                throw e;
+            });
         }).catch(function (e) { TV.log("simkl " + event + ": " + e.message); });
     }
 
