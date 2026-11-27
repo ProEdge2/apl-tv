@@ -4,7 +4,8 @@
    - Playlists: yours (channels, movies, series counted, Xtream end date),
      add one from your phone (QR code) or with the remote, rename, guide
      address, refresh, delete.
-   - Playback, Display, TV guide, About.
+   - Playback, Display, TV guide, Simkl (your account linked with a code,
+     what is kept the same), About.
    ============================================================ */
 (function (global) {
     "use strict";
@@ -172,6 +173,7 @@
                     });
                 } });
         }
+        if (TV.simkl) { rows.push({ section: "Simkl" }); rows.push(simklRow()); }
         rows.push({ section: T("Voice") });
         var code = TV.voice ? TV.voice.relayCode() : "";
         rows.push({ label: T("Alexa Skill"), value: code ? T("On") : T("Off"), acc: "chevron",
@@ -648,6 +650,113 @@
     }
 
 
+    /* ---------- Simkl: your account, kept the same as APL TV both ways (js/simkl.js) ---------- */
+    function simklWhen() { var st = TV.simkl.state(); return st.at ? "\n" + T("Last synced {d}", { d: new Date(st.at).toLocaleString(TV.locale) }) : ""; }
+    function simklRow() {
+        var K = TV.simkl, a = K.account();
+        if (K.linked()) return { label: "Simkl", value: a.user || T("Linked"), acc: "chevron", icon: "refresh",
+            desc: T("Watched, My List and Continue Watching are kept the same in APL TV and on your Simkl account, both ways.") + simklWhen(),
+            run: function () { push(simklPage()); } };
+        return { label: T("Link Your Simkl Account"), value: a && a.lost ? T("Link Again") : undefined, acc: "chevron", icon: "link",
+            desc: (a && a.lost ? T("Simkl no longer accepts this screen's link: link it again.") + "\n" : "") +
+                  T("Your watched movies and episodes, My List and Continue Watching, the same in APL TV and on Simkl, both ways. A code appears on the screen: type it on simkl.com/pin."),
+            run: function (row) { if (K.clientId()) push(simklLinkPage()); else simklClientId(row, function () { push(simklLinkPage()); }); } };
+    }
+    /* The Client ID of a Simkl app (simkl.com/settings/developer, type "TV, devices & command line"), when APL TV has none built in */
+    function simklClientId(row, then) {
+        edit(row, { value: TV.load("simklClientId", ""), onCancel: function () { redraw(); }, onDone: function (v) {
+            v = String(v || "").replace(/\s+/g, "");
+            TV.simkl.setClientId(v);
+            redraw();
+            if (v && then) then();
+        } });
+    }
+    function simklPage() {
+        var K = TV.simkl, a = K.account() || {}, st = K.state(), rows = [];
+        function again() { D.resumeChanged(); K.sync(true); }
+        rows.push({ label: T("Account"), value: a.user || "Simkl", desc: T("Linked {d}", { d: a.linkedAt ? new Date(a.linkedAt).toLocaleDateString(TV.locale) : "" }) });
+        rows.push({ label: T("Sync Now"), icon: "refresh", value: st.busy ? T("Syncing…") : (st.at ? TV.hhmm(st.at) : T("Never")),
+            desc: T("Asks Simkl what changed and sends what changed here. APL TV also does it by itself when it starts, when it comes back to the screen and when Home opens, at most every 15 minutes.") + (st.error ? "\n" + st.error : ""),
+            run: function () {
+                TV.toast(T("Syncing with Simkl…"));
+                K.sync(true).then(function () {
+                    var s2 = K.state();
+                    TV.toast(s2.error ? T("Simkl does not answer right now ({e}).", { e: s2.error }) : T("Synced with Simkl"));
+                    if (pages[pages.length - 1] && pages[pages.length - 1].title === "Simkl") replaceTop(simklPage());
+                });
+            } });
+        if (st.waiting) rows.push({ label: T("Waiting to Be Sent"), value: String(st.waiting), desc: T("Changes made here that Simkl has not received yet: they go out by themselves as soon as Simkl answers.") });
+        rows.push({ section: T("Kept the Same") });
+        rows.push(toggleRow(T("Watched Movies and Episodes"), "simklWatched", T("The movies and episodes you finish or mark here go into your Simkl history, and what you watched in other apps gets its tick here. Marked unwatched on one side: unwatched on the other."), again));
+        rows.push(toggleRow(T("My List and Plan to Watch"), "simklList", T("My List and your Plan to Watch list on Simkl, both ways. A title you are watching or watched on Simkl keeps its place there."), again));
+        rows.push(toggleRow(T("Continue Watching"), "simklResume", T("Where you stop a movie or an episode goes to Simkl, where you paused in another app comes here, and the next episode of the series you follow on Simkl shows as Up Next."), again));
+        rows.push({ section: T("Account") });
+        rows.push({ label: T("Link the Screen Again"), icon: "link", acc: "chevron", desc: T("If Simkl asks for it, or to use another Simkl account."), run: function () { push(simklLinkPage()); } });
+        if (!K.builtIn()) rows.push({ label: T("Simkl Client ID"), value: K.clientId() ? "••••••••" : T("Not set"), acc: "chevron",
+            desc: T("The Client ID of your own Simkl app (simkl.com › Settings › Developer, type “TV, devices & command line”), when this version of APL TV has none."),
+            run: function (row) { simklClientId(row); } });
+        rows.push({ label: T("Unlink Simkl"), danger: true, run: function () {
+            TV.alert({ title: T("Unlink Simkl?"), message: T("APL TV stops syncing with Simkl. What you watched stays in APL TV and on Simkl."),
+                buttons: [{ label: T("Cancel") }, { label: T("Unlink"), danger: true, run: function () { K.unlink(); pop(); } }] });
+        } });
+        return { title: "Simkl", icon: "refresh", desc: T("Your Simkl account, kept the same as APL TV both ways."), rows: rows, rebuild: simklPage };
+    }
+    /* Linking: a code on the screen, typed on simkl.com/pin (Simkl's sign-in for TVs) */
+    var simklTimer = null, simklRun = null;
+    function simklLinkPage() { return { title: T("Link Simkl"), custom: drawSimkl, onLeave: stopSimkl, rows: [] }; }
+    function stopSimkl() { clearTimeout(simklTimer); simklTimer = null; simklRun = null; }
+    function drawSimkl() {
+        root.innerHTML = "";
+        var qr = el("div", "qr");
+        var box = el("div", "qr__box", "<div style='width:400px;height:400px;display:flex;align-items:center;justify-content:center;color:#888;font-size:24px'>" + esc(T("Starting…")) + "</div>");
+        var url = el("div", "qr__url"), pin = el("div", "qr__pin qr__pin--big"), state = el("div", "qr__state");
+        qr.appendChild(box); qr.appendChild(url); qr.appendChild(pin); qr.appendChild(state);
+        var steps = el("div", "steps");
+        steps.innerHTML =
+            "<div class='step'><b>1</b><span>" + esc(T("On your phone or computer, scan the code or go to simkl.com/pin, and sign in to Simkl (or make a free account).")) + "</span></div>" +
+            "<div class='step'><b>2</b><span>" + esc(T("Type the code shown here, then allow APL TV.")) + "</span></div>" +
+            "<div class='step'><b>3</b><span>" + esc(T("APL TV and Simkl then keep your watched titles, My List and Continue Watching the same, both ways.")) + "</span></div>";
+        var back = el("div", "btn", esc(T("Cancel")));
+        steps.appendChild(back);
+        root.appendChild(qr); root.appendChild(steps);
+        nav = new TV.Nav({ onSelect: function () { stopSimkl(); pop(); } });
+        nav.setTiles([back]);
+        if (TV.shell.focusOn() !== "view") nav.blur();
+        stopSimkl();
+        var my = simklRun = {};
+        TV.simkl.pin().then(function (p) {
+            if (simklRun !== my) return;
+            box.innerHTML = "";
+            box.appendChild(TV.qr.canvas(p.full, 400));
+            url.textContent = String(p.url).replace(/^https?:\/\//, "");
+            pin.textContent = p.code;
+            state.innerHTML = "<i></i>" + esc(T("Waiting for the code…"));
+            var t0 = Date.now(), every = p.every;
+            (function poll() {
+                simklTimer = setTimeout(function () {
+                    if (simklRun !== my) return;
+                    if (Date.now() - t0 > p.expires - 20000) { drawSimkl(); return; }        // a fresh code before this one runs out
+                    TV.simkl.check(p).then(function (r) {
+                        if (simklRun !== my) return;
+                        if (r === "ok") {
+                            stopSimkl();
+                            state.innerHTML = "<i></i>" + esc(T("Linked! Syncing with Simkl…"));
+                            setTimeout(function () { if (pages[pages.length - 1] && pages[pages.length - 1].custom === drawSimkl) { pages = [mainPage(), simklPage()]; redraw(); } }, 1500);
+                            return;
+                        }
+                        if (r === "expired") { drawSimkl(); return; }
+                        if (r === "slow") every += 5000;                                     // Simkl asks to be asked less often
+                        poll();
+                    }, function (e) { TV.log("simkl link: " + e.message); if (simklRun === my) poll(); });
+                }, every);
+            })();
+        }).catch(function (e) {
+            if (simklRun !== my) return;
+            box.innerHTML = "<div style='width:400px;height:400px;display:flex;align-items:center;justify-content:center;text-align:center;color:#555;font-size:24px;padding:20px'>" +
+                esc(e.message) + "</div>";
+        });
+    }
+
     /* ---------- Stremio: your addons, managed here ---------- */
     function stremioSrc(id) { return D.sources().filter(function (x) { return x.id === id; })[0] || D.sources().filter(function (x) { return x.type === "stremio"; })[0]; }
     /* After a change of addons: the streams follow at once, the catalogs are loaded again in the background */
@@ -1014,6 +1123,7 @@
         ok: function () { if (nav) nav.ok(); },
         backHandled: function () { if (pages.length > 1) { pop(); return true; } return false; },
         openPage: function (name) {
+            if (name === "simkl" && TV.simkl) { pages = [mainPage(), TV.simkl.linked() ? simklPage() : simklLinkPage()]; return; }
             pages = [mainPage(), addPage()];
             if (name === "phone") pages.push(phonePage());
             if (name === "remote") pages.push(formPage({ type: "xtream" }));
@@ -1070,9 +1180,11 @@
 
     TV.views = TV.views || {};
     TV.views.settings = view;
+    /* A page of Settings opened from outside (APL Launcher, a request): drawn at once, even when Settings is already on screen */
+    function openFromOutside(name) { var was = visible; view.openPage(name); TV.shell.go("settings", true); if (was) { redraw(0); if (nav) nav.refocus(); } }
     TV.setup = {
-        phone: function () { view.openPage("phone"); TV.shell.go("settings", true); },
-        remote: function () { view.openPage("remote"); TV.shell.go("settings", true); },
-        media: function (which) { view.openPage(which || "media"); TV.shell.go("settings", true); }
+        phone: function () { openFromOutside("phone"); },
+        remote: function () { openFromOutside("remote"); },
+        media: function (which) { openFromOutside(which || "media"); }
     };
 })(window);

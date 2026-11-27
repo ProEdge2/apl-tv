@@ -994,8 +994,8 @@
             onReconnect: function () { stateBox.classList.add("is-on"); tracksDone = false; },
             onBuffering: function (b) { stateBox.classList.toggle("is-on", !!b); },
             // the picture moves: no spinner and no error left over it (a slow start had shown "timeout" first)
-            onPlaying: function () { stateBox.classList.remove("is-on"); errBox.classList.remove("is-on"); if (!tracksDone) setTimeout(applyTrackPrefs, 600); tell("start"); },
-            onTime: function () { stateBox.classList.remove("is-on"); errBox.classList.remove("is-on"); },
+            onPlaying: function () { stateBox.classList.remove("is-on"); errBox.classList.remove("is-on"); if (!tracksDone) setTimeout(applyTrackPrefs, 600); tell("start"); exactStart(o); },
+            onTime: function () { stateBox.classList.remove("is-on"); errBox.classList.remove("is-on"); if (!o.exact) exactStart(o); },
             onSubtitle: function (s) { if (subsOn && !ext) showSub(s); },
             onEnded: function () { o.ended = true; save(true); if (o.next && o.onEpisode && TV.pref("autoNext")) { var n = o.next.ep, cb = o.onEpisode; finish(true); cb(n); } else finish(); },
             onError: function (e) {
@@ -1024,18 +1024,35 @@
         clearInterval(saveTimer);
         saveTimer = setInterval(function () { save(false); tell("progress"); }, 10000);
     }
+    /* A place paused in another app comes from Simkl as a percentage (js/simkl.js): its minute was a guess from the
+       title's usual length, made exact once this video's own length is known */
+    function exactStart(o) {
+        if (o.exact || vod !== o || !o.start) return;
+        var dur = TV.player.duration();
+        if (!dur) return;
+        o.exact = true;
+        var r = D.resumeOf(o.resumeKey);
+        if (o.ep && !(r && r.est)) { var sr = D.resumeOf(o.item.id); if (sr && sr.est && +sr.se === +o.ep.season && +sr.en === +o.ep.episode) r = sr; }
+        if (!r || !r.est || !r.pct || Math.abs(o.start - r.pos) > 5) return;
+        var want = Math.floor(dur * r.pct / 100);
+        if (Math.abs(want - TV.player.position()) > 20) { TV.log("resume from Simkl: " + r.pct + " % of " + Math.round(dur / 60) + " min"); TV.player.seekTo(want); }
+    }
     /* Your Jellyfin or Emby server hears where you are: once the picture moves, every 10 s, and once when
-       the video stops (other sources: js/media.js sends nothing). A video that never started tells nothing. */
+       the video stops (other sources: js/media.js sends nothing). A video that never started tells nothing.
+       Simkl hears it too (js/simkl.js), only when it starts and when it stops. */
     function tell(event) {
-        if (!vod || !TV.media || !TV.media.report || vod.told === "stop") return;
+        if (!vod || vod.told === "stop") return;
         if (event === "start" ? vod.told : !vod.told) return;
         var dur = TV.player.duration(), key = vod.resumeKey, pos = TV.player.position();
         // not really under way yet (a resume still jumping to its point, Back pressed at once): as save() does,
         // the resume point stays, so the server is told where the video started, never 0
         if (event !== "start" && !vod.ended && pos < 5) { if (event === "progress") return; pos = vod.start || 0; }
         vod.told = event === "stop" ? "stop" : "start";
+        var at = vod.ended && dur ? dur : pos;
+        if (TV.simkl && TV.simkl.scrobble && event !== "progress") TV.simkl.scrobble(event, vod, at, dur, event === "stop" && !!dur && (vod.ended || (D.finished ? D.finished(at, dur, !vod.ep) : at > dur * 0.94)));
+        if (!TV.media || !TV.media.report) return;
         // finished: its whole length, so the server counts it as watched with its own settings
-        TV.media.report(vod.url, event, vod.ended && dur ? dur : pos).then(function (ok) {
+        TV.media.report(vod.url, event, at).then(function (ok) {
             // the server has where you stopped: marked unwatched there later, it goes here too (js/data.js)
             if (ok && event === "stop" && D.serverHas) D.serverHas([key]);
         });
@@ -1046,12 +1063,14 @@
         var pos = TV.player.position(), dur = TV.player.duration();
         if (!dur || pos < 5) return;
         var done = ended || (D.finished ? D.finished(pos, dur, !vod.ep) : pos > dur * 0.94), base = { item: vod.item.id, ep: vod.ep ? vod.ep.id : null };
-        if (done) D.setResume(vod.resumeKey, { pos: dur, dur: dur, item: base.item, ep: base.ep, done: true });
-        else D.setResume(vod.resumeKey, { pos: pos, dur: dur, item: base.item, ep: base.ep, epLabel: vod.sub || "" });
+        // an episode's numbers too: Simkl knows it by them (js/simkl.js)
+        function nums(o, e) { if (e && +e.episode) { o.se = +e.season || 1; o.en = +e.episode; } return o; }
+        if (done) D.setResume(vod.resumeKey, nums({ pos: dur, dur: dur, item: base.item, ep: base.ep, done: true }, vod.ep));
+        else D.setResume(vod.resumeKey, nums({ pos: pos, dur: dur, item: base.item, ep: base.ep, epLabel: vod.sub || "" }, vod.ep));
         if (vod.ep) {
-            if (done && vod.next) D.setResume(vod.item.id, { pos: 0, dur: 0, item: base.item, ep: vod.next.ep.id, epLabel: vod.next.label, series: true, upNext: true });
-            else if (done) D.setResume(vod.item.id, { pos: dur, dur: dur, item: base.item, ep: base.ep, epLabel: vod.sub || "", series: true, done: true });
-            else D.setResume(vod.item.id, { pos: pos, dur: dur, item: base.item, ep: base.ep, epLabel: vod.sub || "", series: true });
+            if (done && vod.next) D.setResume(vod.item.id, nums({ pos: 0, dur: 0, item: base.item, ep: vod.next.ep.id, epLabel: vod.next.label, series: true, upNext: true }, vod.next.ep));
+            else if (done) D.setResume(vod.item.id, nums({ pos: dur, dur: dur, item: base.item, ep: base.ep, epLabel: vod.sub || "", series: true, done: true }, vod.ep));
+            else D.setResume(vod.item.id, nums({ pos: pos, dur: dur, item: base.item, ep: base.ep, epLabel: vod.sub || "", series: true }, vod.ep));
         }
     }
 

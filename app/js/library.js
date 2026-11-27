@@ -148,7 +148,7 @@
             drawHero(featured[heroIndex]);
             addRow(T("Continue Watching"), D.continueWatching().filter(mine), "wide", {
                 make: function (x) {
-                    var r = x.resume, sub = r.upNext ? T("Up Next") + " · " + (r.epLabel || "") : (r.epLabel || (r.dur ? T("{n} min left", { n: Math.max(1, Math.round((r.dur - r.pos) / 60)) }) : ""));
+                    var r = x.resume, sub = r.upNext ? T("Up Next") + " · " + (r.epLabel || "") : (r.epLabel || (r.dur && !r.est ? T("{n} min left", { n: Math.max(1, Math.round((r.dur - r.pos) / 60)) }) : ""));
                     return TV.card.wide(x.item, { sub: sub, progress: r.upNext ? 0 : (r.dur ? r.pos / r.dur : 0) });
                 }
             });
@@ -186,6 +186,7 @@
                 if (!page) build(); visible = true; if (dirty || !strips.length) render(); paint();
                 // this server's Continue Watching, as other devices left it (Jellyfin and Emby)
                 if (TV.media && TV.media.fresh) TV.media.fresh(srcId);
+                if (TV.simkl && TV.simkl.fresh) TV.simkl.fresh();
             },
             hide: function () { visible = false; clearInterval(heroTimer); document.body.classList.remove("in-rows"); },
             enter: function () { paint(true); },

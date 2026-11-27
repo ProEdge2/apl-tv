@@ -9,7 +9,8 @@
              variants of one channel put together)
      movies: categories + movies (cover, year, rating, date added)
      series: categories + series (M3U episodes grouped into shows)
-   Also here: favorites, "My List", recent channels, resume points.
+   Also here: favorites, "My List", recent channels, resume points
+   (shared both ways with your Simkl account, js/simkl.js).
    ============================================================ */
 (function (global) {
     "use strict";
@@ -749,8 +750,22 @@
         if (i === -1) l.unshift(id); else l.splice(i, 1);
         TV.save("mylist", l);
         fire("mylist");
+        // Simkl: your Plan to Watch list hears it too (js/simkl.js)
+        if (TV.simkl && TV.simkl.listChanged) TV.simkl.listChanged(itemById(id), i === -1);
         return i === -1;
     }
+    /* My List changed by Simkl (js/simkl.js): titles added or taken out there, without telling Simkl again */
+    function setMyList(add, remove) {
+        var l = myList(), changed = false;
+        (remove || []).forEach(function (id) { var i = l.indexOf(id); if (i >= 0) { l.splice(i, 1); changed = true; } });
+        (add || []).forEach(function (id) { if (l.indexOf(id) < 0) { keepVirtual(id); l.unshift(id); changed = true; } });
+        if (!changed) return false;
+        TV.save("mylist", l);
+        fire("mylist");
+        return true;
+    }
+    /* A movie or a series by its id in the catalog (or a Stremio title kept, virtualById) */
+    function itemById(id) { return (merged && (merged.movies.byId[id] || merged.series.byId[id])) || virtualById(id) || null; }
 
     /* Channels hidden by you (OK held on a channel > Hide This Channel): every quality of it, out of the channel lists,
        the guide, Home, Recent and search. Your favorites and your own groups keep it. Settings > Hidden Channels. */
@@ -1019,7 +1034,13 @@
     function isDone(id) { var e = resumes()[id]; return !!(e && e.done); }
     /* A movie's or an episode's tick: APL TV's own resume point when it has one, else what the media server
        said (js/media.js srvDone: the catalog and the movie's page for a movie, the series page for an episode) */
-    function watched(item, ep) { var e = resumes()[ep ? item.id + "|" + ep.id : item.id]; return e ? !!e.done : !!(ep || item).srvDone; }
+    /* Simkl (js/simkl.js): what it says you watched, on any device, counts too; a resume point of APL TV wins unless
+       Simkl's viewing is more recent (watched to the end on the phone after stopping here) */
+    function watched(item, ep) {
+        var e = resumes()[ep ? item.id + "|" + ep.id : item.id], sk = TV.simkl && TV.simkl.watchedAt ? TV.simkl.watchedAt(item, ep) : 0;
+        if (e) return !!e.done || sk > e.at;
+        return !!(ep || item).srvDone || sk > 0;
+    }
     /* Marked by hand (OK held): watched or not, a movie, an episode, or many episodes at once */
     function markWatched(item, eps, on) {
         var r = resumes(), list = eps && eps.length ? eps : [null], keys = [];
@@ -1029,7 +1050,7 @@
         list.forEach(function (ep) {
             var k = ep ? item.id + "|" + ep.id : item.id;
             keys.push(k);
-            if (on) r[k] = { pos: 1, dur: 1, item: item.id, ep: ep ? ep.id : null, done: true, manual: true, at: Date.now() };
+            if (on) { r[k] = { pos: 1, dur: 1, item: item.id, ep: ep ? ep.id : null, done: true, manual: true, at: Date.now() }; if (ep && +ep.episode) { r[k].se = +ep.season || 1; r[k].en = +ep.episode; } }
             else { delete r[k]; (ep || item).srvDone = false; }
         });
         trimResumes(r);
@@ -1038,6 +1059,8 @@
         if (resave) TV.idb.set("catm:" + item.src, pack(cats[item.src].movies, "movies", item.src));
         // the same on your Jellyfin or Emby server (js/media.js; other sources: nothing)
         if (TV.media && TV.media.played) TV.media.played(item, eps, on).then(function (ok) { if (ok && on) serverHas(keys); });
+        // and on Simkl: added to or taken out of your history (js/simkl.js)
+        if (TV.simkl && TV.simkl.markWatched) TV.simkl.markWatched(item, eps, on);
     }
     /* Your media server took these (it answered): if it drops one later (marked unwatched there), so does APL TV */
     function serverHas(keys) {
@@ -1050,9 +1073,10 @@
         var r = resumes();
         Object.keys(r).forEach(function (k) { if ((k === item.id || k.indexOf(item.id + "|") === 0) && !(r[k] && r[k].done && k !== item.id)) delete r[k]; });
         TV.save("resume", r);
-        // only a media server's resume points can bring it back (syncResumes): nothing to keep for the others
-        var src = sourceOf(item);
-        if (src && src.type === "jellyfin") {
+        // only a media server's or Simkl's resume points can bring it back (syncResumes): nothing to keep for the others
+        var src = sourceOf(item), sk = TV.simkl && TV.simkl.linked && TV.simkl.linked();
+        if (sk) TV.simkl.forgot(item);
+        if ((src && src.type === "jellyfin") || sk) {
             var f = forgotten(), keys;
             f[item.id] = Date.now();
             keys = Object.keys(f);
@@ -1078,17 +1102,23 @@
             // unless it was played here after the question was sent; APL TV's own history, which the server
             // never had, stays
             if (s.none) { if (mine && mine.srv && !(s.asOf && mine.at >= s.asOf)) { delete r[s.key]; changed = true; } return; }
-            // the server knows this one now: if it drops it later, so does APL TV
-            if (mine && !mine.srv) { mine.srv = true; changed = true; }
+            // the server knows this one now: if it drops it later, so does APL TV (Simkl keeps its own mark, js/simkl.js)
+            if (mine && !mine.srv && !s.simkl) { mine.srv = true; changed = true; }
             if (mine && mine.at >= s.at) return;
             // watched on both sides: nothing to change (a mark by hand stays one, out of Recently Watched)
             if (mine && mine.done && s.done) return;
             // taken out of Continue Watching after that: it stays out (a watched one still gets its tick)
             if (!s.done && f[s.item] >= s.at) return;
             if (s.gone) { if (mine) { delete r[s.key]; changed = true; } return; }
-            var e = { pos: s.pos, dur: s.dur, item: s.item, ep: s.ep || null, at: s.at, srv: true };
+            var e = { pos: s.pos, dur: s.dur, item: s.item, ep: s.ep || null, at: s.at };
+            if (s.simkl) e.sk = s.sk || 1; else e.srv = true;
             if (s.done) e.done = true;
             if (s.epLabel) e.epLabel = s.epLabel;
+            // from Simkl: the episode by its numbers (its id in your playlist is known once the series opens, js/detail.js
+            // startEp), and a position from a percentage, made exact once the video starts (js/osd.js)
+            if (s.se) { e.se = s.se; e.en = s.en; }
+            if (s.pct) e.pct = s.pct;
+            if (s.est) e.est = true;
             // a series' own line (js/osd.js save): the episode to resume, or the next one ("Up Next")
             if (s.series) e.series = true;
             if (s.upNext) e.upNext = true;
@@ -1097,6 +1127,17 @@
         });
         if (!changed) return false;
         trimResumes(r);
+        TV.save("resume", r);
+        fire("resume");
+        return true;
+    }
+    /* Simkl (js/simkl.js): watched there no more (marked unwatched on its site or another app): out of APL TV too;
+       known there (sk): a later "not watched" there takes it away */
+    function simklResumes(drop, known) {
+        var r = resumes(), changed = false;
+        (drop || []).forEach(function (k) { if (r[k]) { delete r[k]; changed = true; } });
+        Object.keys(known || {}).forEach(function (k) { if (r[k] && r[k].sk !== known[k]) { r[k].sk = known[k]; changed = true; } });
+        if (!changed) return false;
         TV.save("resume", r);
         fire("resume");
         return true;
@@ -1166,6 +1207,14 @@
             if (score > bestScore) { bestScore = score; best = x; }
         });
         return best;
+    }
+    /* The version shown for these copies of one title (js/simkl.js): the one you chose, else the best one */
+    function pickVersion(list) {
+        if (!list || !list.length) return null;
+        if (list.length === 1) return list[0];
+        var want = versionPrefs()[prefKey(list[0])];
+        for (var i = 0; i < list.length; i++) if (list[i].id === want) return list[i];
+        return bestVersion(list);
     }
     function groupVersions(list) {
         var seen = {}, out = [], pref = null;
@@ -1547,7 +1596,8 @@
         favIds: favIds, isFav: isFav, toggleFav: toggleFav, favChannels: favChannels, moveFav: moveFav,
         chanGroups: chanGroups, chanGroupOf: chanGroupOf, addChanGroup: addChanGroup, renameChanGroup: renameChanGroup, deleteChanGroup: deleteChanGroup, toggleChanGroup: toggleChanGroup, moveInChanGroup: moveInChanGroup,
         pushRecent: pushRecent, recentChannels: recentChannels,
-        myList: myList, inMyList: inMyList, toggleMyList: toggleMyList,
+        myList: myList, inMyList: inMyList, toggleMyList: toggleMyList, setMyList: setMyList, itemById: itemById, titleKey: titleKey, pickVersion: pickVersion,
+        resumes: resumes, simklResumes: simklResumes,
         setResume: setResume, resumeOf: resumeOf, continueWatching: continueWatching, isDone: isDone, watched: watched, markWatched: markWatched, recentlyWatched: recentlyWatched,
         forget: forget, resumeChanged: resumeChanged, syncResumes: syncResumes, serverHas: serverHas,
         isHidden: isHidden, setHidden: setHidden, preferVersion: preferVersion, setCatOff: setCatOff, setGroupOff: setGroupOff, groupLabel: groupLabel, editData: editData, renameChannel: renameChannel, applyPhoneEdit: applyPhoneEdit, offGroups: offGroups, offCats: offCats, hiddenList: hiddenList, unhide: unhide, isChanHidden: isChanHidden, setChanHidden: setChanHidden, hiddenChanList: hiddenChanList, unhideChan: unhideChan, versionKey: versionKey,

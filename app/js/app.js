@@ -11,7 +11,7 @@
     "use strict";
 
     var TV = global.TV, el = TV.el, esc = TV.esc, T = TV.t, D = TV.data;
-    TV.VERSION = "1.4.16";
+    TV.VERSION = "1.4.17";
     TV.DONATE = "https://ko-fi.com/knikt";     // the Ko-fi page for donations (Settings > About, README, .github/FUNDING.yml)
     var BASE = [
         { id: "home", label: T("Home") },
@@ -174,8 +174,8 @@
                 return true;
             }
             if (m.tab && TV.views[m.tab]) { go(m.tab, true); return true; }
-            // a page of Settings to add a source (APL Launcher, a test): settings=phone|media|plex|jellyfin|stremio
-            if (m.settings && TV.setup && /^(phone|media|plex|jellyfin|stremio)$/.test(m.settings)) { TV.setup.media(m.settings); return true; }
+            // a page of Settings to add a source (APL Launcher, a test): settings=phone|media|plex|jellyfin|stremio|simkl
+            if (m.settings && TV.setup && /^(phone|media|plex|jellyfin|stremio|simkl)$/.test(m.settings)) { TV.setup.media(m.settings); return true; }
             // A search asked from outside (voice, APL Launcher): search=<words>
             if (m.search && TV.voice) { TV.voice.search(String(m.search).slice(0, 80)); return true; }
             if (m.play === "last") { var last = D.channel(TV.pref("lastChannel")); if (last) { TV.live.play(last); return true; } }
@@ -251,7 +251,7 @@
             var it = cat && (cat.movies.byId[w.item] || cat.series.byId[w.item]), r = it && D.resumeOf(w.key);
             if (!it || !r || r.done || r.pos < 60) return;
             var label = (it.title || it.name) + (r.epLabel ? " · " + r.epLabel : "");
-            TV.alert({ title: T("Pick up where you left off?"), message: label + "\n" + T("Stopped at {t}", { t: TV.runtime(Math.max(1, Math.floor(r.pos / 60))) }) + (r.dur ? " · " + T("{n} min left", { n: Math.max(1, Math.round((r.dur - r.pos) / 60)) }) : ""),
+            TV.alert({ title: T("Pick up where you left off?"), message: label + "\n" + T("Stopped at {t}", { t: TV.runtime(Math.max(1, Math.floor(r.pos / 60))) }) + (r.dur && !r.est ? " · " + T("{n} min left", { n: Math.max(1, Math.round((r.dur - r.pos) / 60)) }) : ""),
                 buttons: [
                     { label: T("Resume"), run: function () { if (it.kind === "movie") TV.detail.play(it, r.pos); else TV.detail.open(it, { resume: true }); } },
                     { label: T("Not Now") }

@@ -177,7 +177,7 @@
         var cw = D.continueWatching();
         addRow(T("Continue Watching"), cw, "wide", {
             make: function (x) {
-                var r = x.resume, sub = r.upNext ? T("Up Next") + " · " + (r.epLabel || "") : (r.epLabel || (r.dur ? T("{n} min left", { n: Math.max(1, Math.round((r.dur - r.pos) / 60)) }) : ""));
+                var r = x.resume, sub = r.upNext ? T("Up Next") + " · " + (r.epLabel || "") : (r.epLabel || (r.dur && !r.est ? T("{n} min left", { n: Math.max(1, Math.round((r.dur - r.pos) / 60)) }) : ""));
                 return TV.card.wide(x.item, { sub: sub, progress: r.upNext ? 0 : (r.dur ? r.pos / r.dur : 0) });
             }
         });
@@ -292,6 +292,8 @@
             if (featured[heroIndex] && featured[heroIndex].backdrop) { TV.bg(""); heroBg(featured[heroIndex], featured[heroIndex].backdrop); } else TV.bg("");
             // what you watched on your Jellyfin or Emby server from another device: the rows are drawn again when it comes
             if (TV.media && TV.media.fresh) TV.media.fresh();
+            // and on Simkl (js/simkl.js: at most every 15 minutes, one small request when nothing changed)
+            if (TV.simkl && TV.simkl.fresh) TV.simkl.fresh();
         },
         hide: function () { visible = false; clearInterval(heroTimer); TV.meta.clearQueue(); document.body.classList.remove("in-rows"); },
         enter: function () { paint(true); },
