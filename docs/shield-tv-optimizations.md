@@ -336,16 +336,72 @@ sound for every format, and setting up the SHIELD and the HDMI chain correctly.
 
 ## 6. Testing on a Mac
 
-*(Filled in below once the emulator research is complete.)*
+**In short:** there's no SHIELD emulator. An Android TV emulator on the Mac is good for checking that things work
+(navigation, layouts, the Simkl flows, the player's logic) but not for performance, judder, HDR or audio. Do those on
+a real SHIELD, driven from the Mac over the network (§7).
+
+### Is there a SHIELD emulator?
+No. NVIDIA's developer page only offers developer OS images to flash onto a physical SHIELD, and says to validate
+apps on the consumer OS. [M1]
+
+### The closest emulator on an Apple Silicon Mac
+- **System image:**
+  - Android TV arm64 images exist for **API 31, 33, 34 and 36**; Google TV arm64 the same. [M2][M3]
+  - **API 30 (the SHIELD's Android 11) exists only as x86**, which an M-series Mac can't run. Use **API 31**
+    (Android 12).
+  - Android 12 has things the SHIELD lacks, e.g. `CHANGE_FRAME_RATE_ALWAYS`, so don't conclude anything about
+    frame-rate switching from it. [M4]
+  - An Intel Mac can run the exact API 30 x86 image. [M5]
+- **Device profile:** Android Studio's **Television (1080p)** profile already matches the 2019 tube SHIELD:
+  1920×1080, xhdpi, D-pad, 2 GB. [M6]
+  - Clone it with **3 GB** RAM for the Pro. [M7]
+  - The settings live in the AVD's `config.ini`: `hw.lcd.density`, `hw.ramSize`, `hw.dPad`. [M8]
+- **Remote:** the emulator's Extended controls include a D-pad panel. [M9]
+- **WebView:** switch providers with `adb shell cmd webviewupdate set-webview-implementation …` (release-signed
+  providers only on user images). [M10]
+- **APL TV there:**
+  1. Build with `python3 tools/make-android.py --dev` (or `--unsigned`).
+  2. `adb install` the APK.
+  3. Open `chrome://inspect` to debug the page.
+
+### What the emulator can't reproduce
+| Area | Emulator | Real SHIELD |
+|---|---|---|
+| Video decoders | `c2.goldfish.*`, decoding on the Mac, plus AOSP software decoders [M11][M12] | NVIDIA hardware codecs (`OMX.Nvidia.*`) [M13] |
+| HEVC 10-bit / HDR10 / Dolby Vision | Not decoded: 8-bit HEVC Main only, no DV decoder [M14][M15] | Yes (§3.2) |
+| HDR output | None reported [M16] | HDR10, Dolby Vision |
+| Display modes / frame-rate matching | Several resolutions possible, but one refresh rate: no 23.976/24/50/59.94 Hz switching [M17][M8] | Yes (§3.1) |
+| Audio passthrough (AC3, E-AC3/Atmos, TrueHD, DTS) | PCM 16-bit only [M18] | Yes (§5) |
+| AI upscaling | No | 2019 models (§3.4) |
+| GPU / UI smoothness | The Mac's GPU, far faster than the Tegra X1+, so it looks better than it will be [M5][M19] | The real figure |
+| Memory | Can be capped at 2–3 GB; CPU and storage speeds still differ [M7] | 2 GB (tube), 3 GB (Pro) |
+| NVIDIA-specific workarounds in Media3 | Not triggered (`MANUFACTURER == "NVIDIA"` checks) [M20] | Active |
+
+### Other options from a Mac
+- **BrowserStack** has a real **NVIDIA SHIELD TV Pro 2019 (Android 11)**, but only as a private device dedicated to
+  an account (paid). [M21]
+- **Genymotion** doesn't support Android TV. [M22]
+- **Firebase Test Lab** only had virtual Google TV devices (deprecated), and is closing on 2027-09-30. [M23]
+- **AWS Device Farm and Kobiton:** no TV devices found. [M24]
+- **UTM/QEMU:** only unofficial LineageOS builds, not worth it. [M25]
+
+### Recommendation
+- **The emulator (API 31 Television 1080p):** day-to-day functional checks.
+- **A real SHIELD over network adb:** everything that's about speed or picture and sound (§7). A used 2019 tube is
+  the cheapest representative device, since it's also the weakest current model.
+- **BrowserStack's private SHIELD:** only for testing remotely without owning one.
 
 ---
 
 ## 7. Measuring each change on a real SHIELD
 
-1. **Connect from the Mac:**
+1. **Connect from the Mac** (Android platform-tools; `brew install android-platform-tools`):
    1. On the SHIELD, open Settings › Device Preferences › About and press Build 7 times.
-   2. In Developer options, turn on **Network debugging**.
-   3. On the Mac: `adb connect <shield-ip>:5555`.
+   2. In Developer options, turn on **Network debugging**. ❓ The path comes from forum reports; NVIDIA doesn't
+      document it. [M26]
+   3. On the Mac: `adb connect <shield-ip>:5555`, then accept the prompt on the TV.
+   4. **See the screen on the Mac:** `scrcpy` works over the network and mirrors at 1080p. Since SHIELD 9.2.2 some get a blank
+      screen with the default AAC audio. ❓ Untested workaround: `--no-audio` or `--audio-codec=raw`. [M27]
 2. **The UI's frames:**
    - Build with `python3 tools/make-android.py --dev` (WebView debugging on).
    - Open `chrome://inspect` on the Mac and use the Performance, Rendering and Layers panels.
@@ -354,7 +410,14 @@ sound for every format, and setting up the SHIELD and the HDMI chain correctly.
 3. **Composition while video plays:** `adb shell dumpsys SurfaceFlinger`. The video and app layers should be
    DEVICE, not CLIENT. [U7]
 4. **Display mode** (frame-rate matching): `adb shell dumpsys display | grep -i mode`.
-5. **Decoders:** `adb shell dumpsys media.codec` (which decoder, and whether it's reused across channels).
+5. **Decoders:**
+   - `adb logcat EventLogger:* ExoPlayerImpl:* MediaCodecInfo:* *:s`. The `videoDecoderInitialized` line names
+     the decoder; `NoSupport` lines show what was refused. [M28]
+   - On Android 11, use `adb shell dumpsys media.metrics` and `dumpsys media.resource_manager`
+     (`media.codec` isn't a dumpsys service there). [M29]
+   - **Frame pacing of the video:** `adb shell dumpsys SurfaceFlinger --latency <video layer>`, or `--timestats`.
+     `gfxinfo` covers the UI, not the video. [M30]
+   - **Tracing:** Perfetto from ui.perfetto.dev (Android 11+, over the same adb). [M31]
 6. **Start times:**
    - The app log says `started in N ms` for every channel and movie; Stream Info shows the same.
    - Run `adb logcat | grep -i -E "APL TV|ExoPlayer|MediaCodec"`.
@@ -418,6 +481,39 @@ These couldn't be verified from public sources and are worth checking on a SHIEL
 - [P35] https://github.com/androidx/media/blob/release/libraries/exoplayer_hls/src/main/java/androidx/media3/exoplayer/hls/HlsMediaSource.java
 - [P36] https://developer.android.com/media/media3/exoplayer/network-stacks
 - [P37] https://emby.media/learn/articles/live-tv/sources/capacity/TV-IPTV-Limits.html
+
+**Testing on a Mac**
+- [M1] https://developer.nvidia.com/shield-developer-os-images
+- [M2] https://dl.google.com/android/repository/sys-img/android-tv/sys-img2-4.xml
+- [M3] https://dl.google.com/android/repository/sys-img/google-tv/sys-img2-4.xml
+- [M4] https://developer.android.com/reference/android/view/Surface
+- [M5] https://developer.android.com/studio/run/emulator-acceleration
+- [M6] https://android.googlesource.com/platform/tools/base/+/refs/heads/mirror-goog-studio-main/sdklib/src/main/resources/com/android/sdklib/devices/tv.xml
+- [M7] https://developer.android.com/studio/run/managing-avds
+- [M8] https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/android/emu/avd/src/android/avd/hardware-properties.ini
+- [M9] https://developer.android.com/studio/run/emulator-extended-controls
+- [M10] https://chromium.googlesource.com/chromium/src/+/HEAD/android_webview/docs/webview-providers.md
+- [M11] https://android.googlesource.com/device/generic/goldfish/+/refs/heads/main/codecs/media/codecs.xml
+- [M12] https://android.googlesource.com/device/generic/goldfish-opengl/+/8d51d2e%5E%21
+- [M13] https://github.com/androidx/media/blob/release/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/mediacodec/MediaCodecRenderer.java
+- [M14] https://android.googlesource.com/device/generic/goldfish-opengl/+/refs/heads/main/system/codecs/c2/decoders/hevcdec/C2GoldfishHevcDec.cpp
+- [M15] https://android.googlesource.com/platform/frameworks/av/+/refs/heads/main/media/codec2/components/hevc/C2SoftHevcDec.cpp
+- [M16] https://android.googlesource.com/device/generic/goldfish-opengl/+/refs/heads/main/system/hwc3/Display.cpp
+- [M17] https://android.googlesource.com/device/generic/goldfish-opengl/+/refs/heads/main/system/hwc3/DisplayFinder.cpp
+- [M18] https://android.googlesource.com/device/generic/goldfish/+/refs/heads/main/hals/audio/util.cpp
+- [M19] https://www.nvidia.com/en-us/shield/shield-tv/
+- [M20] https://github.com/androidx/media/blob/release/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/video/MediaCodecVideoRenderer.java
+- [M21] https://www.browserstack.com/docs/app-automate/smart-tv/getting-started
+- [M22] https://support.genymotion.com/hc/en-us/articles/115004220045-Does-Genymotion-support-Android-TV
+- [M23] https://firebase.google.com/docs/test-lab/available-testing-devices
+- [M24] https://docs.aws.amazon.com/devicefarm/latest/developerguide/devices.html
+- [M25] https://wiki.lineageos.org/utm-vm-on-apple-silicon-mac
+- [M26] https://forums.nextpvr.com/showthread.php?pid=589588
+- [M27] https://github.com/Genymobile/scrcpy (doc/audio.md; issues #4316, #6501)
+- [M28] https://developer.android.com/media/media3/exoplayer/debug-logging
+- [M29] https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android11-release/services/
+- [M30] https://android.googlesource.com/platform/frameworks/native/+/refs/heads/android11-release/services/surfaceflinger/SurfaceFlinger.cpp
+- [M31] https://perfetto.dev/docs/getting-started/system-tracing
 
 **UI and WebView**
 - [U1] https://developer.android.com/develop/ui/views/graphics/hardware-accel
