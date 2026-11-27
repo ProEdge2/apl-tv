@@ -24,3 +24,6 @@ android/app/src/main/res/drawable/banner.png
 *.apk
 *.jks
 *.keystore
+
+# made by tools/make-android.py (the Android TV banner, xhdpi)
+android/app/src/main/res/drawable-xhdpi/banner.png
