@@ -4,6 +4,14 @@
     python tools/make-android.py --release    the package for GitHub Releases: no personal file
     python tools/make-android.py --dev        your own devices, with the development log (js/dev.local.js)
 
+A test build to try changes on your own TV (a SHIELD…) without touching the installed APL TV:
+    python tools/make-android.py --release --test --update-from you/apl-tv@main
+    --test         "APL TV Test" (com.knikt.apltv.test): installs next to APL TV, with its own playlists and settings
+    --update-from  where its automatic updates come from (a GitHub repository and branch) instead of Knikt/APL-TV@main;
+                   its new .apk is then expected at that repository's release "shield-test" (apl-tv-test.apk)
+    APL_TMDB_KEY, APL_SIMKL_CLIENT_ID (environment, optional): a TMDB key and a Simkl Client ID built into the package
+    .github/workflows/shield-test.yml builds it on GitHub and publishes it.
+
 Needs a JDK 17+, the Android SDK (platforms/android-35, build-tools/35.0.0) and Gradle 8.10:
     ANDROID_HOME (default E:/Android/Sdk), GRADLE (default E:/Android/gradle-8.10.2/bin/gradle.bat),
     JAVA_HOME (default: the Temurin JDK 21 of this PC), GRADLE_USER_HOME (default E:/Android/gradle-home).
@@ -28,6 +36,12 @@ MAIN = os.path.join(AND, "app", "src", "main")
 
 release = "--release" in sys.argv
 dev = "--dev" in sys.argv and not release
+test = "--test" in sys.argv
+def opt(name):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv and sys.argv.index(name) + 1 < len(sys.argv) else ""
+update_from = opt("--update-from")
+if update_from and not re.match(r"^[\w.-]+/[\w.-]+@[\w./-]+$", update_from):
+    sys.exit("--update-from wants owner/repository@branch, for example you/apl-tv@main")
 out = os.path.join(ROOT, "dist")
 
 config = open(os.path.join(A, "config.xml"), encoding="utf-8").read()
@@ -67,6 +81,20 @@ keys_src = os.path.join(A, "js", "keys.example.js" if release else "keys.local.j
 if not os.path.exists(keys_src):
     keys_src = os.path.join(A, "js", "keys.example.js")
 shutil.copy2(keys_src, os.path.join(app_dir, "js", "keys.local.js"))
+# keys given by the environment (a GitHub workflow's secrets), and where a test build's updates come from
+keys_js = open(os.path.join(app_dir, "js", "keys.local.js"), encoding="utf-8").read()
+for env_name, field in (("APL_TMDB_KEY", "tmdb"), ("APL_SIMKL_CLIENT_ID", "simkl")):
+    value = re.sub(r"[^A-Za-z0-9_-]", "", os.environ.get(env_name, ""))
+    if value:
+        keys_js, n = re.subn(r'(\b%s:\s*)""' % field, lambda m: m.group(1) + '"%s"' % value, keys_js)
+        if not n:
+            keys_js = keys_js.replace("window.TV_KEYS = {", 'window.TV_KEYS = {\n    %s: "%s",' % (field, value), 1)
+if update_from:
+    repo, branch = update_from.split("@", 1)
+    keys_js += ('\n/* make-android.py --update-from: this build updates itself from %s (branch %s), and its new .apk is there */\n'
+                'window.TV_UPDATE_RAW = "https://raw.githubusercontent.com/%s/%s/app/";\n'
+                'window.TV_UPDATE_APK = "https://github.com/%s/releases/download/shield-test/apl-tv-test.apk";\n') % (repo, branch, repo, branch, repo)
+open(os.path.join(app_dir, "js", "keys.local.js"), "w", encoding="utf-8", newline="\n").write(keys_js)
 dev_src = os.path.join(A, "js", "dev.local.js")
 if dev and os.path.exists(dev_src):
     shutil.copy2(dev_src, os.path.join(app_dir, "js", "dev.local.js"))
@@ -134,6 +162,7 @@ keytool = os.path.join(java, "bin", "keytool") if java else "keytool"
 # sign packages that cannot update the installed app, so a new key is only made with --new-key.
 unsigned = "--unsigned" in sys.argv
 args = [gradle, "-p", AND, "--no-daemon", "-q", "assembleRelease", "-PaplVersion=" + version] + (["-PaplDebuggable=1"] if dev else [])
+if test: args += ["-PaplAppId=com.knikt.apltv.test", "-PaplLabel=APL TV Test"]
 if not unsigned:
     jks, pw = os.environ.get("APL_KEYSTORE_FILE"), os.environ.get("APL_KEYSTORE_PASS")
     if not jks:
@@ -169,12 +198,14 @@ if not unsigned:
     env["APL_KEYSTORE_PASS"] = pw
     args += ["-PaplKeystore=" + jks, "-PaplKeyAlias=apltv"]
 
-print("APL TV", version, "for Android:", "release" if release else ("dev" if dev else "personal"), "(unsigned)" if unsigned else "")
+print("APL TV" + (" Test" if test else ""), version, "for Android:", "release" if release else ("dev" if dev else "personal"), "(unsigned)" if unsigned else "",
+      ("updates from " + update_from) if update_from else "")
 if subprocess.call(args, env=env, shell=False) != 0:
     sys.exit("the Android build failed (see above)")
 apk = os.path.join(AND, "app", "build", "outputs", "apk", "release", "app-release-unsigned.apk" if unsigned else "app-release.apk")
 os.makedirs(out, exist_ok=True)
 final = os.path.join(out, "apl-tv-v%s%s.apk" % (version, ("-android" if release else ("-dev" if dev else "-personal")) + ("-unsigned" if unsigned else "")))
+if test: final = os.path.join(out, "apl-tv-test-v%s%s.apk" % (version, "-unsigned" if unsigned else ""))
 shutil.copy2(apk, final)
 print("package:", final, os.path.getsize(final), "bytes")
 if release and not unsigned:

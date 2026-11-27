@@ -67,9 +67,11 @@
             if (loader > U.LOADER || (reinstall && U.cmp(reinstall, U.installed) > 0)) {
                 if (manual || TV.pref("updateNotified") !== v.version) {
                     TV.setPref("updateNotified", v.version);
-                    TV.toast(TV.WEBOS ? T("APL TV {v} is out: install its new .ipk once", { v: v.version })
+                    // a test build (make-android.py --update-from) says where its own .apk is
+                    var apk = TV.ANDROID && global.TV_UPDATE_APK ? " · " + String(global.TV_UPDATE_APK).replace(/^https?:\/\//, "") : "";
+                    TV.toast((TV.WEBOS ? T("APL TV {v} is out: install its new .ipk once", { v: v.version })
                            : TV.ANDROID ? T("APL TV {v} is out: install its new .apk once", { v: v.version })
-                                      : T("APL TV {v} is out: install it once with APL Launcher Setup on the PC", { v: v.version }));
+                                      : T("APL TV {v} is out: install it once with APL Launcher Setup on the PC", { v: v.version })) + apk, !!apk);
                 }
                 return;
             }

@@ -439,6 +439,51 @@ These couldn't be verified from public sources and are worth checking on a SHIEL
 - The UI's frame rate while the display is in a 24 Hz mode.
 - Measured IPTV start times for specific buffer values (no study found).
 
+
+---
+
+## 9. Your SHIELD test app: installing it and pushing updates
+
+**APL TV Test** (`com.knikt.apltv.test`) installs next to APL TV, with its own playlists and settings, so the APL TV
+you use every day is never touched.
+- It's built by `python3 tools/make-android.py --release --test --update-from ProEdge2/apl-tv@main`, and on GitHub
+  by `.github/workflows/shield-test.yml`.
+- It updates its web part (the screens, Simkl, most fixes) from **this fork's `main` branch**.
+- When the Android part changes, it shows where the new .apk is.
+
+### One-time setup
+1. **Turn on GitHub Actions on the fork:** github.com/ProEdge2/apl-tv › Actions › enable workflows.
+2. **Add the secrets** (Settings › Secrets and variables › Actions › New repository secret):
+   - `TEST_KEYSTORE_B64` and `TEST_KEYSTORE_PASS`: from the key file Claude sent. It's the test app's own signing
+     key; keep it private, and it must never change, or new builds can't update the installed test app.
+   - Optional: `TMDB_KEY` and `SIMKL_CLIENT_ID`, built into the test app so you don't type them on the TV.
+3. **Merge PR #1 into `main`.** The workflow and the update channel both live on `main`.
+4. **Get the first build:** merging changes `main`, which runs **SHIELD test build** (or run it by hand: Actions › SHIELD
+   test build › Run workflow). It publishes the release **shield-test** with an address that never changes:
+   `https://github.com/ProEdge2/apl-tv/releases/download/shield-test/apl-tv-test.apk`
+5. **Install it on the SHIELD once.** Either way, it updates the test app already there, keeping its data:
+   - **Downloader** (by AFTVnews, from the Play Store): type that address, and allow Downloader to install unknown apps
+     when asked. It remembers the address for next time.
+   - Or from the Mac: `adb install -r apl-tv-test.apk` (§7).
+
+### Pushing an update
+| What changed | What to do | What the SHIELD does |
+|---|---|---|
+| Web part only (`app/js`, `app/css`, `app/index.html`) | Raise the version in `app/config.xml`, `app/js/app.js` and `app/service/service.js`, run `python3 tools/make-build.py --notes "what changes"`, then merge to `main` | Downloads it by itself (every 6 hours, or at once with Settings › Updates › Check for Updates) and restarts when nothing plays |
+| Android part (`android/`) | The same, and also raise `PLATFORMS["android"]["reinstall"]` in `tools/make-build.py` to the new version | Says "APL TV *x* is out: install its new .apk once · github.com/ProEdge2/apl-tv/releases/download/shield-test/apl-tv-test.apk". Open that address in Downloader again |
+
+Claude can do the bump and the build files on its branch and open a PR. Merging it is what publishes the update.
+`tools/check.py` refuses a version that differs between the three files, and refuses a `version.json` that wasn't
+remade.
+
+**Good to know**
+- **Version numbers:** only versions above the installed one are taken.
+  - The test app is 1.4.17 now. Your `main` stays at 1.4.16 until PR #1 is merged, so nothing is downloaded before
+    then.
+  - Pulling the original author's releases into this fork later may reuse numbers. Bump past them.
+- **Your everyday APL TV** keeps updating from Knikt/APL-TV as before. These steps only change the test app.
+- **To remove the test app:** Settings › Apps › APL TV Test › Uninstall.
+
 ---
 
 ## Sources

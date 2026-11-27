@@ -1,0 +1,78 @@
+name: SHIELD test build
+
+# "APL TV Test" for your own Android TV (a SHIELD…): installs next to APL TV (com.knikt.apltv.test), with its own
+# playlists and settings. Built from this repository's main branch and published on the release "shield-test":
+#   https://github.com/<owner>/<repo>/releases/download/shield-test/apl-tv-test.apk   (an address that never changes)
+# The app then updates its web part by itself from this repository's main branch (Settings › Updates); a change of its
+# Android part (android/) needs this new .apk, which the app says when platforms.android.reinstall is raised
+# (tools/make-build.py).
+#
+# Needs two secrets (Settings › Secrets and variables › Actions): TEST_KEYSTORE_B64, the test app's signing key in
+# base64, and TEST_KEYSTORE_PASS, its password. Always the same key, or the .apk can't update the installed test app.
+# Optional: TMDB_KEY and SIMKL_CLIENT_ID, built into the test app.
+# Runs when main changes the app, or by hand: Actions › SHIELD test build › Run workflow.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["app/**", "android/**", "tools/make-android.py", ".github/workflows/shield-test.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shield-test
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: APL TV Test .apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+      - name: Android SDK 35 and Pillow
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          python3 -m pip install --quiet pillow
+      - name: Test signing key
+        env:
+          KEY_B64: ${{ secrets.TEST_KEYSTORE_B64 }}
+        run: |
+          [ -n "$KEY_B64" ] || { echo "::error::The TEST_KEYSTORE_B64 secret is missing (see the top of this file)" >&2; exit 1; }
+          printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/test.jks"
+          echo "APL_KEYSTORE_FILE=$RUNNER_TEMP/test.jks" >> "$GITHUB_ENV"
+      - name: Build
+        env:
+          APL_KEYSTORE_PASS: ${{ secrets.TEST_KEYSTORE_PASS }}
+          APL_TMDB_KEY: ${{ secrets.TMDB_KEY }}
+          APL_SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+          GRADLE: gradle
+        run: python3 tools/make-android.py --release --test --update-from "${{ github.repository }}@${{ github.event.repository.default_branch }}"
+      - name: Publish on the release "shield-test"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp dist/apl-tv-test-v*.apk dist/apl-tv-test.apk
+          version="$(sed -n 's/.*<widget[^>]* version="\([^"]*\)".*/\1/p' app/config.xml)"
+          notes="APL TV Test $version, built from ${GITHUB_SHA::7} on $(date -u +'%Y-%m-%d %H:%M') UTC. Install apl-tv-test.apk on your TV (Downloader app, or adb install -r)."
+          if gh release view shield-test > /dev/null 2>&1; then
+            gh release edit shield-test --title "APL TV Test $version" --notes "$notes" --prerelease
+          else
+            gh release create shield-test --target "$GITHUB_SHA" --title "APL TV Test $version" --notes "$notes" --prerelease
+          fi
+          gh release upload shield-test dist/apl-tv-test.apk dist/apl-tv-test-v*.apk --clobber
