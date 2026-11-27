@@ -126,22 +126,55 @@ for folder, size in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72), ("mipmap-xhdpi", 
     d = os.path.join(MAIN, "res", folder)
     os.makedirs(d, exist_ok=True)
     icon.resize((size, size), Image.LANCZOS).save(os.path.join(d, "ic_launcher.png"))
-banner = Image.new("RGB", (320, 180), (0, 0, 0))
+# The banner: 320 x 180 dp, drawn at twice that (640 x 360) for xhdpi screens (a SHIELD and most Android TV boxes: a 1080p
+# UI at 320 dpi), so it stays sharp instead of being stretched from 320 x 180 pixels. Its title is drawn with the app's own
+# font (Inter Display) when there is no SF Pro, and made smaller until it fits: with the build machine's font at a fixed
+# size (DejaVu Sans on GitHub) it ran off the edge ("APL T"). A test build (--test) says TEST under it.
+K = 2
+W, H = 320 * K, 180 * K
+banner = Image.new("RGB", (W, H), (0, 0, 0))
 px = banner.load()
-for y in range(180):
-    for x in range(320):
-        t = (x / 320.0) * 0.6 + (y / 180.0) * 0.4
+for y in range(H):
+    for x in range(W):
+        t = (x / float(W)) * 0.6 + (y / float(H)) * 0.4
         px[x, y] = (int(28 - 20 * t), int(38 - 28 * t), int(57 - 42 * t))
-logo = icon.resize((112, 112), Image.LANCZOS)
-banner.paste(logo, (26, 34), logo)
+logo = icon.resize((112 * K, 112 * K), Image.LANCZOS)
+banner.paste(logo, (26 * K, 34 * K), logo)
 draw = ImageDraw.Draw(banner)
-font = None
-for f in (os.path.join(A, "fonts", "SFPRODISPLAYBOLD.OTF"), "C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
-    if os.path.exists(f):
-        font = ImageFont.truetype(f, 46); break
-draw.text((156, 62), "APL TV", fill=(255, 255, 255), font=font or ImageFont.load_default())
-os.makedirs(os.path.join(MAIN, "res", "drawable"), exist_ok=True)
-banner.save(os.path.join(MAIN, "res", "drawable", "banner.png"))
+FONTS = [os.path.join(A, "fonts", "SFPRODISPLAYBOLD.OTF"), os.path.join(A, "fonts", "InterDisplay-Bold.woff2"),
+         "C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
+def font_at(size):
+    for f in FONTS:
+        if os.path.exists(f):
+            try:
+                return ImageFont.truetype(f, size)
+            except OSError:
+                continue                     # a .woff2 this Pillow can't read: the next one
+    return None
+left, right = 152 * K, (320 - 16) * K        # after the logo, with a margin on the right
+def fitted(text, size):
+    while size > 10:
+        f = font_at(size)
+        if f is None or f.getlength(text) <= right - left:
+            return f
+        size -= 1
+    return font_at(size)
+title, mid = fitted("APL TV", 46 * K), (34 + 56) * K     # the logo's middle
+def write(xy, text, font, fill, anchor):
+    if font is None:
+        draw.text(xy, text, fill=fill)      # no font at all: Pillow's own, unanchored
+    else:
+        draw.text(xy, text, fill=fill, font=font, anchor=anchor)
+if test:
+    write((left, mid + 4 * K), "APL TV", title, (255, 255, 255), "ls")
+    write((left + 2 * K, mid + 14 * K), "TEST", fitted("TEST", 17 * K), (255, 196, 70), "lt")
+else:
+    write((left, mid), "APL TV", title, (255, 255, 255), "lm")
+for old_banner in (os.path.join(MAIN, "res", "drawable", "banner.png"),):
+    if os.path.exists(old_banner):
+        os.remove(old_banner)                # the 320 x 180 one of older builds: the xhdpi one is used everywhere
+os.makedirs(os.path.join(MAIN, "res", "drawable-xhdpi"), exist_ok=True)
+banner.save(os.path.join(MAIN, "res", "drawable-xhdpi", "banner.png"))
 
 # ---- the tools (on this PC: E:, where there is room; on GitHub: what the runner provides)
 win = os.name == "nt"
